@@ -1,0 +1,43 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack the project
+        run: |
+          echo "--- files in the repo ---"
+          ls -la
+          ZIP=$(ls *.zip 2>/dev/null | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: no .zip file found in the repository."
+            echo "Upload the project zip to the repo root and run this again."
+            exit 1
+          fi
+          echo "--- unpacking $ZIP ---"
+          unzip -o "$ZIP"
+          echo "--- after unpacking ---"
+          ls -la
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: career-dugout-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
