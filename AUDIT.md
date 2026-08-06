@@ -413,3 +413,114 @@ moves, in the same commit.
 Explicitly not recommended: anything in `PROJECT_STATE.md` §5 or the "explicitly
 dropped" list. Those decisions are correct and well evidenced, and the reasoning
 behind them is better than most shipped games manage.
+
+---
+
+## 8. Second pass: the scenes, audited one at a time
+
+Prompted by "the scenes are completely broken", which was right. The corner fix
+in §1 was one bug in one moment; it did not touch the other six. `SceneAudit`
+samples every scene occurrence **at the instant play restarts** — the same
+lesson as §1, applied deliberately this time — and asks the one question that
+decides whether each moment reads.
+
+### 8.1 What was wrong
+
+| scene | reads correctly | the fault |
+|---|---|---|
+| THROW-IN | **12%** | staging wiped one tick later; scene shorter than the ball's own journey |
+| GOAL KICK | **44%** | staging wiped one tick later; keeper 11.0 m from his own goal kick |
+| FREE KICK | — | **no caption at all**, on a false comment |
+| PENALTY | 100% **stacked** | PENALTY caption, GOAL banner and celebration in one frame |
+
+**Throw-ins and goal kicks were never given a staging hold.** `stageCorner` and
+`stageFreeKick` both set `stagedUntil`, which is the whole mechanism that stops
+`updateTargets` overwriting an arrangement on the next tick. `stageThrowIn`
+never did, and the goal kick had no stage function at all — four lines inline.
+So both set their targets and had them wiped one frame later. This is precisely
+the fault `PROJECT_STATE.md` §4 records as *fixed* for the free-kick wall; it
+was fixed there and never applied to the other two restarts.
+
+**The throw-in scene was shorter than the ball's journey to the touchline.**
+`ThrowTrace`, tick by tick, is unambiguous: the ball is rolled from wherever the
+move ended to the touchline — 36 units in one traced case — taking about 1.3 s,
+arriving on the exact tick the 1.4 s caption expires, with the nearest man still
+8 m away and play restarting on top of him. The viewer was shown the word
+THROW-IN over a ball rolling across open grass, and never the throw-in.
+
+**The free kick had no caption because of a wrong comment.** `MatchView` excludes
+CORNER, PENALTY and FREEKICK from the generic caption, on a comment asserting
+that all three "already draw their OWN titles in drawCornerScene,
+drawPenaltyScene and drawSpray". `drawSpray` draws no text — it draws the
+referee's vanishing spray and nothing else. So 3.9 free kicks a match played out
+completely unnamed, with a scatter of white dots on the grass as the only thing
+marking the moment. Same fault as `Scene.LABEL` going unreferenced for months,
+found the same way: by looking.
+
+**A goal never cleared the scene.** `scoreGoal` sets the banner and the
+celebration but leaves `scene` alone, so a penalty scored inside its own
+two-second caption drew PENALTY, GOAL and the celebration starburst in one
+frame. Measured on 100% of penalties.
+
+### 8.2 After — `SceneAudit`, 20 matches, sampled at the restart
+
+```
+scene           seen   spread   nearest   ball to        READS    STACKED     extra
+                            m    mate m     man m    CORRECTLY on another
+CORNER            51      9.1       4.6       4.3          84%         0%      6.35
+FREE KICK         10     19.3      10.3       4.3          60%         0%      3.00
+THROW-IN         142     18.6      10.8       2.5          99%         0%      1.35
+GOAL KICK        348     17.3       9.7       1.8          81%         0%      3.42
+PENALTY            2     10.1       5.4       4.0         100%         0%      1.00
+BOOKING           25     18.6       9.3       0.8          96%         0%      0.00
+KICK OFF          20     23.4      13.4       4.4          45%         0%      0.00
+SUB               76     17.9       9.7       4.9          71%         3%      0.00
+```
+
+Throw-in 12% → **99%**. Goal kick 44% → **81%**. Corner **84%**, with **6.35
+attackers in the box** at the delivery, which is real-football territory.
+Penalty stacking 100% → **0%**.
+
+### 8.3 Balance: the added-time leak, found by breaking it
+
+Holding the restarts long enough to be seen pushed goals per game to **2.41**,
+outside the target band — 4.6 standard errors below the 2.52 baseline, so not
+noise. The cause is §4.4, which the first pass reported and left alone:
+`addedTime` was computed **once** from the stoppage accrued so far, and every
+set piece taken during added time was never given back. The longer set pieces
+hold the ball, the more playing time leaks away.
+
+Fixed properly rather than papered over with `CHANCE_QUALITY`: the referee's
+allowance is still rolled once, and stoppage is now added on continuously, which
+is what a fourth official actually does.
+
+```
+                     baseline      2.41 build     after added-time fix
+goals per game    2.52 +/- 0.03   2.41 +/- 0.03      2.49 +/- 0.03
+cards per game         1.88            1.68               1.73
+home / draw / away  42.3/26.1/31.6  42.6/26.2/31.2   42.6/25.8/31.6
+```
+
+2.49 against a 2.52 baseline is 0.03 — inside the combined standard error. The
+whole scene programme is balance-neutral. `UiFlow` 33/33, 0 crashes.
+
+### 8.4 A correction to my own first pass
+
+I described the players as clumping into a swarm, from the throw-in frame. That
+was one unlucky frame. Measured spread is 18–19 m from a side's own centroid and
+does not move across the change set. There is no clumping problem; the real
+defects were the ones the numbers found, not the one I thought I saw. Included
+here because it is exactly the failure mode §6 is about, and it caught me too.
+
+### 8.5 Still open
+
+- **KICK OFF reads 45%** — the ball is a mean 4.4 m from the nearest man when
+  the scene ends. Not investigated.
+- **FREE KICK is the weakest remaining scene.** It now has a caption, but its
+  only art is the spray mark, and the wall dissolves at the strike (correctly)
+  so most rendered frames catch it after the kick. Worth a wall that holds a
+  beat longer.
+- **The free-kick scene count drops from 91 to 10** between the midpoint and the
+  restart sample, meaning most free-kick captions do not survive to the end of
+  their own scene. Something is overwriting them. Unexplained, and the obvious
+  next thread to pull.
