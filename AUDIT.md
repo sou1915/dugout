@@ -462,24 +462,53 @@ celebration but leaves `scene` alone, so a penalty scored inside its own
 two-second caption drew PENALTY, GOAL and the celebration starburst in one
 frame. Measured on 100% of penalties.
 
-### 8.2 After — `SceneAudit`, 20 matches, sampled at the restart
+### 8.2 After — `SceneAudit`, 20 matches
+
+Sampled at **0.18 of the scene remaining**: the last moment before the ball is
+played. That instant is chosen, not assumed — see 8.5, where getting it wrong
+cost me a false finding in the first draft of this section.
 
 ```
 scene           seen   spread   nearest   ball to        READS    STACKED     extra
                             m    mate m     man m    CORRECTLY on another
-CORNER            51      9.1       4.6       4.3          84%         0%      6.35
-FREE KICK         10     19.3      10.3       4.3          60%         0%      3.00
-THROW-IN         142     18.6      10.8       2.5          99%         0%      1.35
-GOAL KICK        348     17.3       9.7       1.8          81%         0%      3.42
-PENALTY            2     10.1       5.4       4.0         100%         0%      1.00
-BOOKING           25     18.6       9.3       0.8          96%         0%      0.00
-KICK OFF          20     23.4      13.4       4.4          45%         0%      0.00
-SUB               76     17.9       9.7       4.9          71%         3%      0.00
+CORNER           134     12.2       6.7       3.0          66%         0%      3.93
+FREE KICK         92     18.4      10.2       1.6          89%         0%      3.17
+THROW-IN         141     18.4      10.8       2.4         100%         0%      1.04
+GOAL KICK        416     17.4       9.8       2.0          82%         0%      3.34
+PENALTY            1     10.1       4.7       2.5         100%         0%      1.00
+BOOKING           27     19.9      10.4       0.9          89%         0%      0.00
+KICK OFF          20     23.4      13.4       4.6          45%         0%      0.00
+SUB               76     16.5       9.3       5.6          62%         3%      0.00
 ```
 
-Throw-in 12% → **99%**. Goal kick 44% → **81%**. Corner **84%**, with **6.35
-attackers in the box** at the delivery, which is real-football territory.
-Penalty stacking 100% → **0%**.
+Throw-in 12% → **100%**. Goal kick 44% → **82%**. Free kick, once it had a
+caption, **89%** with a 3.2-man wall and the taker 1.6 m from the ball. Penalty
+stacking 100% → **0%**.
+
+For the corner the authoritative number is not in this table — `CornerStrike`
+detects the delivery exactly, by watching the ball leave the flag:
+
+| | attackers in box at the delivery | | defenders | keeper off his line |
+|---|---|---|---|---|
+| | before | after | after | after |
+| 1× | 2.23 | **3.18** | 5.08 | 7.3 m |
+| 2× | 2.73 | **3.15** | 4.63 | 7.1 m |
+| 4× | 3.79 | **2.87** | 4.63 | 6.7 m |
+
+Flat across the speed control, which is the point of §2.1.
+
+### 8.2b Nobody was taking the corner
+
+The table above shows the ball **17.7 m from the nearest player** at the moment
+before it is played, and that was a real bug, not a sampling artefact:
+`stageCorner` sent *every* outfielder to the penalty area and nominated nobody
+to stand over the ball. The corner was being swung in by an invisible man.
+
+The nearest attacker is now placed at the flag, the way `stageFreeKick` has
+always placed its taker, and excluded from the box scatter — with his two `rng`
+draws still taken so the stream is untouched. Ball to nearest man **17.7 m →
+3.0 m**. It costs about 0.2 of a body in the box, because the taker used to be
+counted among them while walking through.
 
 ### 8.3 Balance: the added-time leak, found by breaking it
 
@@ -495,14 +524,15 @@ allowance is still rolled once, and stoppage is now added on continuously, which
 is what a fourth official actually does.
 
 ```
-                     baseline      2.41 build     after added-time fix
-goals per game    2.52 +/- 0.03   2.41 +/- 0.03      2.49 +/- 0.03
-cards per game         1.88            1.68               1.73
-home / draw / away  42.3/26.1/31.6  42.6/26.2/31.2   42.6/25.8/31.6
+                     baseline      2.41 build     added-time fixed    final
+goals per game    2.52 +/- 0.03   2.41 +/- 0.03    2.49 +/- 0.03   2.51 +/- 0.03
+cards per game         1.88            1.68             1.73            1.72
+home / draw / away  42.3/26.1/31.6  42.6/26.2/31.2  42.6/25.8/31.6  43.0/25.6/31.4
 ```
 
-2.49 against a 2.52 baseline is 0.03 — inside the combined standard error. The
-whole scene programme is balance-neutral. `UiFlow` 33/33, 0 crashes.
+**2.51 against a 2.52 baseline**, inside the target band and inside the combined
+standard error. The whole scene programme is balance-neutral. `UiFlow` 33/33,
+0 crashes.
 
 ### 8.4 A correction to my own first pass
 
@@ -512,15 +542,42 @@ does not move across the change set. There is no clumping problem; the real
 defects were the ones the numbers found, not the one I thought I saw. Included
 here because it is exactly the failure mode §6 is about, and it caught me too.
 
-### 8.5 Still open
+### 8.5 A second correction to my own work
 
-- **KICK OFF reads 45%** — the ball is a mean 4.4 m from the nearest man when
+The first draft of this section reported that "the free-kick scene count drops
+from 91 to 10 between the midpoint and the restart sample, meaning most
+free-kick captions do not survive their own scene. Something is overwriting
+them. Unexplained." That was wrong, and it was my harness, not the engine.
+
+A set piece is struck at `SET_PIECE_TAKE` = 0.85 of its hold, which leaves 15%
+of the scene, and the next moment — a goal kick, a save — replaces the caption
+at that instant, correctly. My sampler fired at 12% remaining, i.e. *after* the
+free kick had already been taken and replaced, so it caught only the residue
+where no new scene followed. Sweeping the sampling point settles it:
+
+```
+sample at   FREE KICK seen   reads correctly
+   0.12                 9              67%
+   0.18                59              95%
+   0.30                59              97%
+```
+
+The free kick was fine once it had a caption. I published a defect that was an
+artefact of where I put the shutter — which is the same mistake as
+`StagingCheck`, made by me, two sections after I wrote it up. It is a genuinely
+easy one to make and the only defence is the one this project already knows:
+state the instant, and sweep it before believing the number.
+
+### 8.6 Still open
+
+- **KICK OFF reads 45%** — the ball is a mean 4.6 m from the nearest man when
   the scene ends. Not investigated.
-- **FREE KICK is the weakest remaining scene.** It now has a caption, but its
-  only art is the spray mark, and the wall dissolves at the strike (correctly)
-  so most rendered frames catch it after the kick. Worth a wall that holds a
-  beat longer.
-- **The free-kick scene count drops from 91 to 10** between the midpoint and the
-  restart sample, meaning most free-kick captions do not survive to the end of
-  their own scene. Something is overwriting them. Unexplained, and the obvious
-  next thread to pull.
+- **SUBSTITUTION reads 62%**, ball 5.6 m away. Not investigated.
+- **The corner is 66% on the `SceneAudit` criterion** (3+ attackers in the box
+  at the sampling instant) because that instant is just *before* the delivery,
+  while men are still arriving. At the delivery itself it is 3.2 attackers and
+  5.1 defenders. Whether that is enough is a judgement about the picture, and
+  the rendered frame now reads as a corner; §0's rule says stop there.
+- **`ResultFingerprint` needs re-recording.** Every result-affecting change here
+  legitimately moves it, and the value in `PROJECT_STATE.md` was already stale
+  before I started.
