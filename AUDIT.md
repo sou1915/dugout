@@ -755,3 +755,131 @@ listed above and all three moved nothing.
 **v2 does not play down the flanks, so no rule about the touchline can fire.**
 Wide play needs a model of where the space IS. That is the entire reason engine
 v3 exists, and it is the argument for finishing v3 rather than tuning v2 again.
+
+---
+
+## 10. The second list: the UI, the shouts, and why the match looks empty
+
+### 10.1 The appointment screen was a black rectangle — one line
+
+Reported with two screenshots: the panel reads "YOU HAVE THE <CLUB> JOB" and
+everything under it is empty down to "WHAT THEY EXPECT".
+
+```kotlin
+top.addView(crest(c, 56), lp(WRAP, WRAP).also { it.rightMargin = dp(12) })
+```
+
+`crest()` returns a `CrestView` already carrying its own 56 dp layout params.
+Passing a second set replaced them with `wrap_content` — and **a custom View
+that does not override `onMeasure` does not honour wrap_content**:
+`View.getDefaultSize` returns the whole `AT_MOST` size. So the crest measured to
+the full width of the panel, and the info column beside it, which takes what is
+left through a weight, got zero. The club name, division, stadium and squad
+rating were all being drawn into a column no pixels wide.
+
+Eleven other crests in the app are added without layout params and are fine;
+this was the only one. `CrestView` now measures itself properly as well, so
+neither half can recur.
+
+### 10.2 The camera and the resolution are not choices
+
+Two buttons cycled the framing (Wide/Close/Tight) and the pixel buffer
+(256/320/384/512), both relabelling themselves as they went. Both gone: the
+camera is fixed at `WIDE_ZOOM = 1.9` and `PIXEL_WIDTH` is 1280. At 1280 columns
+the nearest-neighbour blit is one to one, so the chunkiness goes and the
+palette, flat shading, shallow camera and figure proportions stay — the same
+drawing, drawn sharp.
+
+### 10.3 The tactics screen no longer jumps to the top
+
+Every control there ends in `renderScreen()`, which rebuilds the tree, and a new
+`ScrollView` starts at the top. So picking a style, a role, an instruction or a
+taker threw you back to the top of a screen five pages long. The scroll position
+is remembered per screen and restored — but only when the rebuild is of the
+*same* screen, so navigating somewhere new still starts at the top.
+
+### 10.4 Shouts DO reshape the side — and two of them lie
+
+`ShoutCheck` plays to the half hour, makes one change, and measures the twenty
+minutes after it against a control that changed nothing on the same seeds.
+`line` is the mean x of the ten outfield men in their own attacking direction.
+
+```
+  shout                    line      width    press m   territory
+  SAY NOTHING              46.6      19.3        5.7       46.4%
+  Push them forward        59.8      19.2        6.3       60.9%
+  Throw everyone up        67.1      18.3        5.7       63.5%
+  See it out               29.8      18.7        6.4       32.5%
+  Through the middle       49.4      14.8        6.4       53.6%
+  Get it wide              39.7      21.5        6.2       35.2%
+  Tighten up               37.4      18.3        6.9       43.6%
+  Press them               43.1      18.0        6.5       41.3%
+```
+
+Four of them are emphatic and correct. Two are not:
+
+- **"Press them" does the opposite of pressing.** The nearest opponent to the
+  man on the ball goes from 5.7 m to **6.5 m** — further away — and the line
+  drops four units. In v2, `tactics.press` reaches only `updateTargets`, where
+  it slides the whole shape toward the ball wherever the ball happens to be,
+  including deep in your own half. It never reaches the code that actually
+  presses: `V2_TACKLE_M`, the chaser's urgency, or the size of `v2Support`.
+- **"Get it wide" retreats.** Width does rise (19.3 → 21.5) but the line falls
+  seven units and territory falls eleven points, which is not what the button
+  says.
+
+**No shout improves the press.** Every one of the eight leaves the carrier with
+more space than saying nothing. Not fixed here — it is a result-affecting
+change to v2's defending and needs its own `BalanceBig`.
+
+### 10.5 Why the match looks like nothing is happening
+
+`AliveCensus` counts 26.8 take-ons, 11.0 dives and 4.1 slides a match, and the
+owner reports seeing none of them. Both are true: **a count is not a duration**,
+and nobody had ever measured the duration. `PoseTime`, 15 matches, seconds of a
+407-second match:
+
+```
+                              before   after
+  somebody taking a man on      13.8    22.0
+  a shot being struck           19.4    24.9
+  a header                       8.6    12.9
+  the keeper diving             12.5    12.5
+  a man sliding in               2.1     2.1   0.5%
+  a man on the floor             2.0     2.0   0.5%
+  the referee showing a card     2.8     2.8   0.7%
+  ANY named pose at all         57.4    72.4   14.1% -> 17.8%
+```
+
+A slide is on screen for **two seconds in seven minutes**. So is a foul. The
+referee is on screen for under three. Nobody will ever catch those, however well
+they are drawn — and that is the answer to "there are no scenes."
+
+`TAKE_ON` and `SHOT` captions read **0.0 seconds**: those two scenes exist and
+are never once set under v2. `PENALTY` also reads 0.0.
+
+Lengthened here: `TAKE_ON_POSE`, `HEADER_POSE`, `SHOOT_POSE`. I expected these
+to be free — none of the three is among the actions that stop a man moving —
+and `ResultFingerprint` moved, so that expectation was wrong and they were
+earned on `BalanceBig` instead: **2.59 ± 0.03 goals, 43.8% home over 9,120
+matches**, which is the same figure to two decimal places as before the change.
+The fingerprint moving without the balance moving is what a chaotic-but-neutral
+change looks like, and it is the reason the 200-match fingerprint is a detector
+and the 9,120-match run is the verdict.
+
+`TACKLE` and `DOWN` are left alone deliberately: they freeze a man, so
+lengthening the slide and the foul changes who is available to play the next
+ball. That is the next measured change, and it is the one that matters most for
+what the owner is asking to see.
+
+### 10.6 Still open from this list
+
+- **Player distribution across the pitch.** `WidthCheck` §9.8 is the measurement:
+  the men are 48% inside the middle fifth and the man on the ball 69%.
+- **AI layers for all 22.** This is engine v3 — `Pitch.kt`, `RoleTree.kt` and the
+  utility scorer are written and quarantined behind `ENGINE_V3`; what is missing
+  is a v3 match that plays to full time (docs/ENGINE_V3.md §6).
+- **The dugout.** The tactics written there are the same objects `updateTargets`
+  reads every tick, and §10.4 shows those changes do reach the pitch. If a
+  change still reads as no change, the likely candidate is the two shouts above
+  that move the side the wrong way.
