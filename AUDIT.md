@@ -581,3 +581,177 @@ state the instant, and sweep it before believing the number.
 - **`ResultFingerprint` needs re-recording.** Every result-affecting change here
   legitimately moves it, and the value in `PROJECT_STATE.md` was already stale
   before I started.
+
+---
+
+## 9. The presentation pass: sound, the goal, the restart, the squad screen
+
+Seven things, in the owner's words, and what happened to each.
+
+### 9.1 "7iyed ga3 sawt mn lgame" — every sound is gone
+
+`ui/MatchAudio.kt` deleted, the mixer and the AudioTrack with it, and
+`core/Synth.kt` reduced from 388 lines of run-time synthesis — noise sources,
+biquads, a crowd bed that never repeated — to the eleven constants that NAME
+the moments. The Sound/Muted button is gone from the controls row.
+
+`MatchEngine.sound` stays. A cue is a record of what happened and where, not a
+noise; the engine, the replay and about thirty harnesses read or drain that
+list, and deleting it would have meant changing the simulation to satisfy a
+change to the presentation. If sound is ever wanted back, only the mixer has to
+return.
+
+### 9.2 The ball now goes IN THE NET
+
+A scoring shot was aimed at x = 99 or 1 — the goal LINE — so it stopped dead on
+it, and the replay, which is captured on the frame the goal is given, ended with
+the ball sitting on the paint. Worse, the aim was `50 ± 8` units while the goal
+is 5.4 units either side of centre, so a third of all goals were drawn entering
+the net outside the upright.
+
+A shot that is going in is now re-aimed to 1.9 units past the line (2.0 m, and
+the renderer's net runs 2.3 m deep, so it finishes inside the netting rather
+than behind it) and clamped between the posts. Misses are untouched, and the
+conversion roll has already happened when this runs, so it moves the picture and
+not one result.
+
+`GoalNet`, 60 matches, 203 goals:
+
+| | before | after |
+|---|---|---|
+| ball past the line when the goal is given | 0% | **100%** |
+| ball between the posts | ~65% | **100%** |
+
+### 9.3 There is a kick-off after a goal
+
+`Scene.KICK_OFF` fired once a match, at the opening whistle. Every goal after
+that just flipped possession after 1.2 match minutes, wherever the celebration
+had left everybody standing.
+
+Now: the conceding side restarts from the centre spot. The ball is placed, every
+man is sent into his own half, two takers stand over it, and play is held until
+the arrangement has had its time. The whole dead period beyond the old 1.2
+minutes is returned as stoppage, the same bargain the throw-in makes.
+
+And the camera CUTS to it. Staged on the centre spot with the camera still down
+at the net, the pan -- rate limited on purpose -- could not get there: `GoalFilm`
+measured the ball at x = -46 and then -53 in a 400-wide buffer, off the left edge,
+so the whole restart happened where nobody could see it. Broadcast cuts to the
+centre circle at a kick-off rather than swinging the length of the pitch, and so
+does this, on the one frame the scene begins. The ball now lands at x = 202 of
+400 -- dead centre -- and the rendered frame reads as a kick-off: the circle, the
+caption, the ball on the spot with two men over it.
+
+`GoalNet`: kick-offs went from 1.0 a match to **4.33**, against 1 + 3.28 goals
+= 4.38 expected, and 200 of 203 goals were followed by one (the three are goals
+on the stroke of half or full time). One man in twenty two is in the opponents'
+half at the restart, which is the taker, which is the law.
+
+`BalanceBig`, 9,120 matches: **2.59 ± 0.03 goals, 43.8% home** — inside the
+band, and exactly the figure v2 read before any of this.
+
+One trap found while writing it. A goal parks `pendingSide` at `clock + 999` so
+that nothing resumes until the kick-off has been staged, and every engine tick is
+gated on `pendingSide < 0`. A goal in the last two minutes of added time reaches
+half time before the restart is taken, and the interval used to carry that park
+into the second half: the flip would come due at minute 1044 and the second half
+would contain no football at all. Cleared at the interval now.
+
+### 9.4 Players head the ball again
+
+`AliveCensus` read **0.0 headers a match** under v2, against a real forty. The
+pose was correct and the code that set it was correct; it lived on the v1 path,
+where a lofted pass named its receiver before it was struck. v2 has no named
+receiver — the ball is a loose object and whoever reaches it takes it — so that
+line had not run since v2 was switched on.
+
+A ball collected above 1.25 m is now headed, read off the height the ball is
+actually at. **0.0 → 17.1 a match.** `ResultFingerprint` byte identical before
+and after: `1a4dd0489a53eb20`.
+
+### 9.5 The squad screen shows the squad
+
+The dressing room and the filter row were pinned above a `ScrollView` holding
+the list, so on a landscape phone the list got whatever was left — about four
+rows of a twenty-five man squad, in a window that never grew however far you
+scrolled. The whole screen scrolls now, so the header travels up and off and the
+list ends up with the entire display. Tactics was already one scroll and needed
+nothing.
+
+### 9.6 The "how do you want to start" screen
+
+Two one-sentence panels stacked down a landscape phone, with the bottom three
+fifths of the screen empty, on the one screen where the player decides how his
+career begins. Rebuilt as two cards side by side, each filling the height, each
+saying enough about the route to choose it: what starting out of work actually
+means, and what taking a club now actually means.
+
+### 9.7 What was tried and reverted
+
+Rule 7, four times over.
+
+- **The carrier's infield drift.** Every carrier is pulled 12% toward y = 50 on
+  every decision and nothing pushes the other way, which looked like the reason
+  play lives in the middle. Restricting it to the final third moved the ball's
+  share of the middle fifth from 60.3% to 61.4% and throw-ins from 0.50 to 1.00.
+- **The pass scorer's distance-to-goal term**, taken to the goal line rather
+  than the goal centre so width was not penalised twice: 62.9% and 0.58. Worse.
+- **A man pinned on the touchline playing it out**, which is how most real
+  throw-ins happen: 1.75 deliveries a match aimed off the field against 1.67,
+  throw-ins 0.58. The condition almost never holds.
+- **The ball's run-on expressed per second instead of per frame.** This one is a
+  real defect and the finding is worth more than the change. `driftX` is applied
+  once a tick with bare constants, so how far a ball runs on depends on the frame
+  rate the phone manages and on the speed button — at 4× it is a quarter of what
+  it should be. Correcting it took `BalanceBig` from 2.56 to **2.82 goals**,
+  outside the band. The reason is that `BalanceBig` runs at `speed = 6` and
+  dt = 1/30, where one tick is worth seven reference frames: **the harness and
+  the game have disagreed about the ball since v2 was tuned.** Fixing it properly
+  means earning balance a fourth time with a full `CHANCE_QUALITY` sweep, which
+  is a job of its own.
+- **The camera's framing of a goal.** `GoalFilm` prints where the ball projects
+  on screen: at the instant a goal is given it is at x = 400 in a 400-wide
+  buffer, hard against the edge, and the pan is still catching up forty frames
+  later. Leading the camera at the ball's destination, winding the pan easing
+  from 0.16 to 0.55, and opening the behind-the-line clamp so it may centre on
+  the net moved that from 400 to 391 between them. The clamp was never the
+  constraint: the pan travels about five buffer pixels a frame at its ceiling
+  while a shot travels twenty. The fix is `PAN_MAX` and the 0.085 gain, which
+  govern every frame of every match, so it belongs to a pass with rendered
+  frames of ordinary play in front of it.
+
+### 9.8 The width finding, which is the real one
+
+`WidthCheck` measures where play happens across the pitch, counting live play
+only — a third of a match is dead ball and almost all of that has the ball on or
+near the centre line, so counting every frame measures the stoppages.
+
+```
+                          ball     men   man on the ball
+  y  0-20 (left touch)     7.9%   10.2%       4.5%
+  y 20-40                  8.2%   14.8%       8.6%
+  y 40-60 (middle)        60.3%   48.1%      69.0%
+  y 60-80                 13.3%   15.9%      12.3%
+  y 80-100 (right touch)  10.3%   10.9%       5.7%
+
+  deliveries aimed off the field   1.67 a match
+  ...of which crossed              0.50 a match
+```
+
+The band split has no reference figure, and the first draft of this harness
+printed "a real match is roughly 20/20/20/20/20" beside it, which I asserted and
+did not measure — real football does play more through the middle than down
+either wing. It has been taken out. What the split IS good for is the
+comparison between its three columns: the man on the ball is markedly more
+central than the men are, so play concentrates the ball beyond where the shape
+puts the players.
+
+The last pair is the whole of the throw-in gap — 0.5 a match against a real
+forty — and it is not a retrieval problem, a clamp or a scoring weight. Almost
+nothing is ever aimed out, because the man on the ball is inside the outer two
+fifths of the pitch for a tenth of live play. Three separate attempts on it are
+listed above and all three moved nothing.
+
+**v2 does not play down the flanks, so no rule about the touchline can fire.**
+Wide play needs a model of where the space IS. That is the entire reason engine
+v3 exists, and it is the argument for finishing v3 rather than tuning v2 again.
