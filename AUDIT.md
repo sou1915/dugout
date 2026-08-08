@@ -883,3 +883,89 @@ what the owner is asking to see.
   reads every tick, and §10.4 shows those changes do reach the pitch. If a
   change still reads as no change, the likely candidate is the two shouts above
   that move the side the wrong way.
+
+---
+
+## 11. Engine v4, step one: a corner that the attackers reach
+
+The owner's instruction: take from every version what was right, put it in a new
+engine, rewrite what still has a problem, and try ideas that have not been tried
+here. The split and the plan are in `docs/ENGINE_V4.md`. This is the first step
+of it, and the first genuinely new idea.
+
+### 11.1 Look at a corner. It is worse than the aggregates said.
+
+`CornerFilm` films a whole corner instead of sampling an instant, which is all
+any previous harness did. On the first corner of a match, with the delivery at
+frame 32:
+
+```
+                       before   after
+  attackers in the box      5       8
+  defenders in the box     10      10
+  mean gap to target      7.6 m   3.6 m
+  taker from the ball     4.5     3.5
+```
+
+The attacking side was told to fill the box and was still 7.6 m short of where
+it had been sent when the ball was swung in. Earlier in the same corner it is
+worse: two attackers against eight defenders while the men jog across.
+
+They were not ignoring the instruction. The effort table gave them 0.80 of their
+pace, and 0.80 of their pace does not cross half a pitch in the time a corner
+lasts. **No value of that multiplier fixes it, because the multiplier does not
+know the deadline.**
+
+### 11.2 The new idea: ARRIVE BY, not RUN HARD
+
+Every engine here has answered "how fast should this man run?" with a table of
+distance-to-ball bands times a hand-tuned urgency. v4 inverts it. A target can
+carry a **time** — *be there in N seconds* — and the speed follows:
+
+```
+  needed = distance / secondsLeft,  capped by what he can physically do
+```
+
+The table's pace stays as the floor, so a deadline can only ever make a man
+quicker, never lazier. A man 40 m from the six yard box with 8 seconds runs at
+5 m/s and arrives; the same man with 30 seconds walks. `stageCorner` now hands
+out the deadline the delivery actually has — `CORNER_SECONDS * SET_PIECE_TAKE`
+less a moment to be set — and the defending side gets a slightly earlier one, so
+it is set before the attackers arrive.
+
+Behind `ARRIVE_BY`, default on, with the old table one boolean away.
+
+### 11.3 And the slide, the foul and the referee
+
+Continued from §10.5, and earned on `BalanceBig` this time rather than assumed
+free. `TACKLE_POSE` 0.6 → 0.95 s, the share of won challenges shown as a slide
+0.34 → 0.62, `DOWN_POSE` 0.5 → 1.1 s, `REF_HOLD` 2.6 → 3.8 s. `PoseTime`,
+seconds of a 407-second match:
+
+```
+                              was    now
+  a man sliding in            2.1    7.4
+  a man on the floor          2.0    4.2
+  the referee showing a card  2.8    4.1
+  a header                    8.6   14.1
+  somebody taking a man on   13.8   22.3
+```
+
+`act()` already caps the pitch at two men on the floor at once, so the longer
+poses cannot turn a match into a hospital scene.
+
+### 11.4 Kept honest
+
+`BalanceBig` on the slide and foul alone: **2.60 ± 0.03 goals, 44.1% home**.
+`BalanceBig` with `ARRIVE_BY` on top: **2.56 ± 0.03 goals, 43.9% home**. Both
+inside the band, and both within one standard error of the 2.59 v2 has read all
+along — so eight attackers arriving in the box instead of five costs the game
+nothing. `UiFlow` 33/33, `PoseTime` as above.
+
+### 11.5 Next
+
+`docs/ENGINE_V4.md` §5 has the order. The next new idea is **the corner as a
+play with parts and deadlines** rather than nine men scattered into a box — a
+taker, a near-post and a far-post runner on staggered deadlines so they attack
+the ball rather than stand in it, a short option, an edge man and two holding.
+With 11.2 underneath it, the corner routine settings finally mean something.
