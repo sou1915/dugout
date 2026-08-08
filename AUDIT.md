@@ -1036,3 +1036,66 @@ shipped, which is the argument for writing the gate at the same time as the code
 `BalanceBig`, 9,120 matches: **2.54 ± 0.03 goals, 44.3% home** — inside the band.
 `UiFlow` 33/33. So a corner that is actually defended, with two men on the posts
 and everybody goal-side of somebody, costs the game nothing.
+
+---
+
+## 13. Engine v4, idea 3: the ball belongs to whoever gets there first
+
+Both previous engines decided possession with a **radius**. v2 hands the ball to
+anybody standing inside 1.8 m of it; v3 adds a refusal when the ball is
+travelling too fast, and that refusal is the leading suspect for why a v3 match
+degenerates into a ball that is loose 92% of the time.
+
+A radius cannot express the only question that matters. It is not "who is near
+it" but "who gets to it first" — and a man sprinting onto a ball from six metres
+reaches it before a man standing four metres away facing the wrong way. No
+radius will ever say so.
+
+So there is no radius. The ball's path is sampled four tenths of a second ahead,
+every player is asked how long **he** would take to be at each of those points —
+allowing for the speed and the direction he is already travelling, which is the
+whole difference — and the lowest claim wins it. A ball nobody can reach stays
+loose because nobody's claim is low, not because a threshold said no; and a ball
+already over the line is never claimable, because none of its future positions
+are on the pitch, so throw-ins are safe by construction.
+
+`BallAir`, 10 matches:
+
+```
+                          radius   claim time
+  ball at a man's feet     40.5%      59.6%
+  loose, rolling           34.3%      19.5%
+  in flight                25.2%      20.9%
+  off the ground           19.8%      15.5%
+  mean ball height         0.53 m     0.35 m
+```
+
+This is the owner's oldest complaint, from the very first message about the
+simulation — *the ball keeps flying and never settles on the ground* — and it is
+now the other way round: the ball is at somebody's feet for three fifths of the
+match.
+
+### 13.1 The lever had been dead since v2 was switched on
+
+Claim-time possession pushed 9,120 matches to **2.71 goals**, over the top of the
+2.5–2.7 band. Sides that keep the ball work it and shoot more; that is the point,
+not a regression, and the answer is the lever.
+
+Moving `CHANCE_QUALITY` from 0.1038 to 0.0995 — a 4% cut — produced **2.71 goals,
+46.9% home, 0.97 cards**: identical to three figures on all three. A lever that
+changes nothing is not a lever.
+
+The reason is plain once looked for. `CHANCE_QUALITY` feeds `resolvePhase`, which
+is **v1's** chance quality. v2 scores its own shots through `V2_SHOT_BASE`. It has
+been dead under the shipping engine since `ENGINE_V2` was switched on, and
+`BalanceBig sweep` — the documented way to rebalance this game — has been sweeping
+a dead parameter ever since. It is left at its v1 value, because v1 is still in
+the build as the control row that makes findings provable.
+
+`V2_SHOT_BASE` 0.52 → **0.495**: **2.60 ± 0.03 goals, 46.4% home**, inside the
+band. `UiFlow` 33/33.
+
+Home wins are 46.4% against a target of ~45% and against 43.8% before this. That
+is 2.6 points and about five standard errors, so it is real: a side that keeps
+the ball benefits more at home, which is what home advantage IS. It sits inside
+the band the project has always accepted and is noted here rather than tuned away.
