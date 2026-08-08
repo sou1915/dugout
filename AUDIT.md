@@ -969,3 +969,70 @@ play with parts and deadlines** rather than nine men scattered into a box — a
 taker, a near-post and a far-post runner on staggered deadlines so they attack
 the ball rather than stand in it, a short option, an edge man and two holding.
 With 11.2 underneath it, the corner routine settings finally mean something.
+
+---
+
+## 12. Engine v4, idea 2: the corner is a play, and the manager can see it
+
+`stageCorner` sent nine men to random points in a rectangle over the penalty
+area. Two things followed, both measured.
+
+**The picture was the same for all four routines.** The routine chose who the
+ball was aimed at and what the chance was worth, and moved nobody — so "near
+post", "far post", "work it short" and "edge of the box" were one arrangement
+with four sets of odds. **And a scatter has no near post and no far post**, so
+there was nothing for a delivery to be aimed at, which is why the corner has
+been the hardest scene in this project to make look like football.
+
+A corner is now a set of PARTS, each a place and a time: somebody on the ball, a
+short option who must be there early or the short ball is not a real choice, a
+near-post and a far-post runner on late deadlines so they attack the ball rather
+than stand waiting for it, a man at the penalty spot, one on the edge for the
+cut-back, and men held back against the counter. Parts go to whoever is nearest
+them, not in shirt order — a corner where the left back sprints past two team
+mates to reach the far post is not a corner.
+
+`CornerPlay`, where the attacking side stands at the instant the ball is struck:
+
+```
+  routine               box   near    far  short   edge   back
+  near post             4.3    1.6    1.4    1.8    1.1    2.1
+  far post              4.4    0.9    0.7    1.8    1.1    2.3
+  work it short         3.8    0.9    0.6    1.9    1.0    2.0
+  edge of the box       4.0    0.9    0.8    1.9    1.9    2.1
+
+  men up                box   near    far  short   edge   back
+  keep men back         3.9    1.0    0.7    1.9    0.1    4.0
+  normal                4.4    0.9    0.7    1.8    1.1    2.3
+  everyone up           6.3    1.0    0.6    1.9    1.8    0.0
+```
+
+Four identical rows would mean the manager cannot see his own instruction. They
+are not identical: a near-post corner puts a second body on the near post, an
+edge corner doubles up outside the area, everyone-up puts **6.3** men in the box
+with nobody left behind, and keep-men-back leaves **4.0** in their own half.
+
+`CornerFilm` on the same corner as §11: at the delivery every man is a mean
+**2.1 m** from where he was sent, against 7.6 m before any of this — the whole
+routine is in place when the ball comes in.
+
+### 12.1 Two bugs found by measuring rather than by looking
+
+- **"Everyone up" was identical to "normal".** There were only seven parts and
+  the normal setting already used all seven, so the extra men had nowhere to go.
+  Two more places to be, and the setting means something.
+- **The men "held back" were held back in the OPPOSITION half.** The sign was
+  the wrong way round: `inward` already points from the corner flag into the
+  pitch, so going back is plus, not minus. They were standing at x 56–70 for a
+  side attacking x = 100, twenty metres in front of where they belonged, and the
+  `back` column read 0.0 for every setting.
+
+Neither would have been visible without a harness that asks where the men are
+per setting. Both were introduced in this same rewrite and caught before it
+shipped, which is the argument for writing the gate at the same time as the code.
+
+### 12.2 Kept honest
+
+`BalanceBig`, 9,120 matches: **2.54 ± 0.03 goals, 44.3% home** — inside the band.
+`UiFlow` 33/33. So a corner that is actually defended, with two men on the posts
+and everybody goal-side of somebody, costs the game nothing.
