@@ -1158,3 +1158,76 @@ it is recorded as such rather than tuned around.
 `BalanceBig` 9,120 matches: **2.60 ± 0.03 goals, 46.4% home** — identical to the
 figure before the change, so the state costs nothing. `UiFlow` 33/33. New
 harness `MindCheck`.
+
+---
+
+## 15. Engine v4, idea 5: Physics.kt owning the ball — written, measured, parked
+
+The finding at the end of §14 pointed here: two attempts to make a man meet a
+pass failed because an interpolated ball has an aim point and not a resting
+place, and only a ball with a velocity and a drag can be asked where it will
+stop. So the next step was to give `Physics.kt` the ball in open play.
+
+`Physics.restPoint` answers the question. Rolling speed decays as
+`v * (1 - drag * dt)`, so the distance still to travel is the sum of that
+series; an airborne ball is stepped until it lands and then rolls. It returns
+where the ball will come to rest and how long it will take, which is exactly
+what a man needs to decide "can I be there by then?"
+
+`v2Strike` was rewritten to hit the ball in a **direction, at a speed, at an
+angle** and never say where it should end up, and the flight step to integrate
+rather than interpolate — with `ball.t` still driven to 1 at the end so the
+interception, boundary, claim and goal-waiting code all carry on unchanged.
+
+### 15.1 What it got right
+
+`BallAir`:
+
+```
+                       v2 ball   physics ball
+  ball at a man's feet   59.6%      75.6%
+  loose, rolling         19.5%      10.3%
+  in flight              20.9%      14.1%
+  off the ground         15.5%       5.4%
+  mean ball height       0.35 m     0.16 m
+```
+
+### 15.2 What condemned it
+
+`AliveCensus`:
+
+```
+                v2 ball   physics ball
+  goals            2.60       1.00
+  corners           5.6        1.9
+  goal kicks       21.6        8.1
+  free kicks        2.7        1.2
+  cards            1.20       0.50
+```
+
+A match with a third of the goals and a third of the corners is not a better
+match, whatever the possession figures say.
+
+The cause is in the same run: **mean flight duration 5.5 seconds**. A ball
+decaying exponentially never really arrives — it creeps the last few metres for
+seconds — so every possession takes longer, there are fewer of them, and the
+whole match slows down behind the ball.
+
+Hitting the pass harder, so it arrives *with pace* rather than coming to rest on
+the man, was the obvious answer and moved nothing: 1.00 goals and 5.5 seconds
+again. So the fault is not the strike speed. It is that `ball.t` is driven from
+distance-to-rest, and **"the delivery is over" is not the same event as "the ball
+has stopped rolling."**
+
+### 15.3 Parked, not thrown away
+
+`PHYS_BALL` is off. Everything is kept and is sound: the rest-point predictor,
+the strike path, the integration step. `BalanceBig` with it off: **2.60 ± 0.03
+goals, 46.4% home**, `UiFlow` 33/33 — exactly where the branch was before.
+
+The next attempt should end the flight when the ball becomes **collectable** —
+slow enough and low enough for the claim model — and let it keep trickling
+underneath as a loose ball. That is one condition, in one place, and it is the
+single most valuable piece of work left in this project: it is what a met pass,
+a deflection, a scramble in the box and a ball that runs out for a throw all
+depend on.
