@@ -824,6 +824,10 @@ Four of them are emphatic and correct. Two are not:
   it slides the whole shape toward the ball wherever the ball happens to be,
   including deep in your own half. It never reaches the code that actually
   presses: `V2_TACKLE_M`, the chaser's urgency, or the size of `v2Support`.
+
+  **This reading was wrong and is corrected in §16.** The harness averaged the
+  carrier's space over BOTH sides, which is a confound. On the corrected metric
+  the shout is roughly neutral, not backwards.
 - **"Get it wide" retreats.** Width does rise (19.3 → 21.5) but the line falls
   seven units and territory falls eleven points, which is not what the button
   says.
@@ -1231,3 +1235,52 @@ underneath as a loose ball. That is one condition, in one place, and it is the
 single most valuable piece of work left in this project: it is what a met pass,
 a deflection, a scramble in the box and a ball that runs out for a throw all
 depend on.
+
+
+---
+
+## 16. Engine v4, idea 6: instructions reaching the code — and a correction
+
+### 16.1 The measurement that motivated it was wrong
+
+§10.4 reported that "Press them" makes the press **worse**, 5.7 m → 6.5 m. That
+came from a `ShoutCheck` that averaged the carrier's space over **both sides**,
+and that is a confound rather than a measurement: a side that presses well wins
+the ball higher and then *has* it more, in the opposition half, where its own
+man has more room. The average then moves the wrong way for the right reason.
+
+Corrected to measure only what the shouting side does to the **other** side's
+carrier:
+
+```
+  SAY NOTHING   6.5 m
+  Press them    6.4 m
+  Tighten up    9.2 m
+  See it out    7.4 m
+```
+
+So the sitting-off shouts are emphatically right — nine metres of space when you
+tell them to drop off — and "Press them" is roughly **neutral**, not backwards.
+It is weak, not broken. That is a materially different thing and the earlier
+claim is withdrawn.
+
+### 16.2 Tried and reverted: making the press stronger
+
+Press size 2/3/4 men by setting, tackle reach ×0.82/×1.30, challenge rate
+×0.80/×1.35 — the three places `tactics.press` never reached.
+
+```
+                      line     press m
+  SAY NOTHING         43.7        6.5
+  Press them, before  +6.4        6.4
+  Press them, after   +3.4        7.2
+```
+
+Worse on both. Four men chasing one is four men out of shape, and the fourth
+arrives late enough to be running past the ball rather than at it.
+
+So the answer is not more men run at the ball, and it points where everything
+else in v4 points: pressing needs a model of the **space being cut off**, which
+is `Pitch.kt`, the layer that is written and not yet driving anything.
+
+`UiFlow` 33/33 after the revert; the engine is byte-for-byte where §15 left it.
