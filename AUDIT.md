@@ -1331,3 +1331,45 @@ at the old `V2_SHOT_BASE`, below the band — so the lever was earned a fourth
 time: 0.495 → **0.565**, giving **2.53 ± 0.03 goals, 45.2% home**. Home wins
 moved back toward the target from 46.4%, which the claim-time change had pushed
 up. `UiFlow` 33/33.
+
+---
+
+## 18. Skills and take-ons: correct code that could not be reached, and a landmine
+
+`AliveCensus` has printed **0.00 named skill moves a match** in every run in this
+audit, and `PoseTime` read the `TAKE_ON` caption at **0.0 seconds**. Both are
+advertised in the brief. Neither has ever appeared on screen.
+
+Not because they are hard. Because they live in `stepPhase`, which is the **v1**
+phase engine, and v2 has taken its own decisions since it was switched on. The
+code was correct and unreachable — **the third time that exact shape of defect
+has been found in this file**, after `v2Defend` being written and never called
+and `CHANCE_QUALITY` being swept while dead.
+
+`v2Flourish` now fires on v2's take-on: the caption, the man he goes past named
+and turning to chase, a line of commentary, and — for a genuinely gifted player —
+one of the eight named tricks.
+
+```
+                        before   after
+  named skill moves       0.00    3.00 a match
+  TAKE-ON caption          0.0    18.0 s  (4.5% of the match)
+  take-on pose            13.8    22.1 s
+```
+
+### 18.1 A landmine that had never been stepped on
+
+The first call to the new take-on commentary **crashed the engine**:
+
+```
+ArrayIndexOutOfBoundsException: Index 9 out of bounds for length 9
+  at MatchEngine.say(MatchEngine.kt:3128)
+```
+
+`L_DRIBBLE = 9`, and `BANKS` has nine banks, 0 to 8. **Any** `say(L_DRIBBLE, …)`
+would have killed the match. It had survived because nothing in the shipping
+engine had ever called it — the take-on commentary is in its own `DRIBBLE_LINES`
+array and is read directly. It is a dead constant now instead of a live trap.
+
+`BalanceBig` 9,120 matches: **2.53 ± 0.03 goals, 45.2% home**, unchanged.
+`UiFlow` 33/33.
