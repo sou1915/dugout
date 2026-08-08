@@ -1099,3 +1099,62 @@ Home wins are 46.4% against a target of ~45% and against 43.8% before this. That
 is 2.6 points and about five standard errors, so it is real: a side that keeps
 the ball benefits more at home, which is what home advantage IS. It sits inside
 the band the project has always accepted and is noted here rather than tuned away.
+
+---
+
+## 14. Engine v4, idea 4: every man knows what he is doing
+
+The owner's idea, in his words: every player should carry his own flag, so he
+never makes an incorrect movement; he should hold the ball for a moment and
+*think* about the best thing to do; and he should know he has the ball at the
+moment he gets it, or know that he is waiting for a pass.
+
+He is describing something the engine did not have. Until now the match had
+**one** description of the situation — `ball.holder`, one `v2Think` timer, one
+`v2PassTo` — and twenty two players who read it. Nobody carried any state of his
+own, so no player could know "I have the ball"; he could only look at a global
+variable and infer it.
+
+Every man now carries a `Mind`: SHAPE, ON_BALL, EXPECTING, CHASING, PRESSING,
+and his own `thinkLeft`.
+
+### 14.1 The bug this immediately exposed
+
+**The time on the ball belonged to the MATCH, not to the man.** `v2Think` was a
+single field. When possession turned over, the man who had just won the ball
+inherited whatever was left of the think of the man he took it from — sometimes
+most of a second of composure he had not earned, sometimes nothing at all,
+depending entirely on when in the previous man's touch the tackle happened.
+
+It is his own now, set from his own composure and vision at the instant it
+becomes true. And every other player's belief about himself is cleared in the
+same place, so two men can never both think they have the ball and nobody is
+left expecting a pass somebody else has already won.
+
+### 14.2 Tried twice and reverted: going to meet the pass
+
+The obvious use of EXPECTING is to send the receiver to where the ball is going,
+with the flight time as his deadline. `MindCheck` measures whether he is within
+three metres of the ball when it arrives:
+
+```
+  nothing                              13.4%
+  EXPECTING man sent to the aim point  14.8%
+  nearest man sent to the aim point    11.1%
+```
+
+Nothing, and then worse. **The aim point is not where the ball ends up.**
+`v2Strike` jitters it by up to twenty units for a hurried pass, and the ball then
+runs on past it under its own drift — so "where it is going" is a place the ball
+merely passes through.
+
+Meeting a pass properly needs the ball's **rest position**, and that is something
+a physics ball can be asked for and an interpolated one cannot. So this is an
+argument for `Physics.kt` owning the ball in v4, not for another target rule, and
+it is recorded as such rather than tuned around.
+
+### 14.3 Kept honest
+
+`BalanceBig` 9,120 matches: **2.60 ± 0.03 goals, 46.4% home** — identical to the
+figure before the change, so the state costs nothing. `UiFlow` 33/33. New
+harness `MindCheck`.
