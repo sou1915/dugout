@@ -1284,3 +1284,50 @@ else in v4 points: pressing needs a model of the **space being cut off**, which
 is `Pitch.kt`, the layer that is written and not yet driving anything.
 
 `UiFlow` 33/33 after the revert; the engine is byte-for-byte where §15 left it.
+
+---
+
+## 17. Offside — a rule the game did not have, because it forbade the offence
+
+The owner: *the game feels boring, and it needs rules like offside.*
+
+He is right, and the reason is worth stating exactly. The engine did not fail to
+call offside. It **prevented** it:
+
+```kotlin
+// Nobody strays beyond the last defender: an attacker who did
+// would simply be offside, and it looked wrong on the pitch.
+if (attacking && Pos.group(p.pos) == 3) {
+    val theirLine = lastDefenderX(1 - side)
+    tx = min(tx, theirLine + 1.5f)
+}
+```
+
+Every attacker was clamped to an invisible rail a yard and a half behind the last
+defender, for ninety minutes. So there was never a flag, never a whistle for it,
+and — the part that matters for how the match *feels* — **a striker's run had no
+meaning**, because he could not beat the line and could not be caught by it.
+
+Now he plays on the shoulder and sometimes goes early, and the referee decides.
+
+- **How disciplined he is is his `POS`.** A clever forward times it; a poor one
+  strays. The offside trap is the other side of the same coin.
+- **Judged when the ball is PLAYED**, not when it arrives — recorded in
+  `v2Strike` at the instant it leaves the passer's foot, because the last
+  defender's position *then* is what the law asks about.
+- **Given when he TOUCHES it.** A man who was offside and never interferes is
+  not penalised, which is the law and is why the flag goes up in `v2Give`.
+- Free kick to the defending side where he was standing, with a whistle and a
+  feed line.
+
+```
+  offsides per match   6.30      real: 4-6 across both sides
+```
+
+### 17.1 It costs goals, exactly as it does in real football
+
+A chance that used to be a shot is now a flag. 9,120 matches read **2.26 goals**
+at the old `V2_SHOT_BASE`, below the band — so the lever was earned a fourth
+time: 0.495 → **0.565**, giving **2.53 ± 0.03 goals, 45.2% home**. Home wins
+moved back toward the target from 46.4%, which the claim-time change had pushed
+up. `UiFlow` 33/33.
