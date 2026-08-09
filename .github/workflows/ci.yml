@@ -1,0 +1,85 @@
+name: CI
+
+# GAME_BRIEF.md §6 step 1: the shim, CI on push, and a gate skeleton that fails
+# loudly when there is no engine to hash.
+#
+# THE GATE JOB IS EXPECTED TO BE RED UNTIL STEP 2. There is no engine yet, so
+# there is nothing to fingerprint, and a gate that reported green against an
+# empty engine would teach everyone to read green as meaning nothing. The
+# compile and selftest jobs are green now and stay green.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  KOTLIN_VERSION: 2.0.21
+  # The container locale is not guaranteed to be UTF-8 and the gate's output
+  # contains section marks and dashes. Without this the breakdown arrives in
+  # the log as question marks, which is a readable-breakdown requirement failed
+  # on a technicality.
+  JAVA_OPTS_ENCODING: -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache the Kotlin compiler
+        id: kotlinc-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/kotlinc
+          key: kotlinc-${{ env.KOTLIN_VERSION }}
+
+      - name: Fetch the Kotlin compiler
+        if: steps.kotlinc-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL --retry 3 -o kotlin.zip \
+            "https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip"
+          unzip -q kotlin.zip -d "$HOME"
+
+      # Everything compiles headless against the Java2D shim. This is the claim
+      # in §1.1 and it is checked on every push, from the first push, so it can
+      # never quietly stop being true.
+      - name: Compile the shim and the gate
+        run: |
+          export PATH="$PATH:$HOME/kotlinc/bin"
+          kotlinc -nowarn \
+            tools/shim/*.kt \
+            tools/gate/*.kt \
+            -include-runtime -d build/gate.jar
+
+      # The one part of the gate that can be proved before an engine exists:
+      # that the shape breakdown names the statistic that moved, by how much,
+      # worst first, and ignores a change smaller than its quantum.
+      - name: Gate selftest — the readable breakdown
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar gate.GateKt --selftest
+
+      # The gate itself. Red until step 2, on purpose. The exit codes are
+      # translated here so the log says which kind of red it is.
+      - name: Fingerprint gate
+        run: |
+          set +e
+          java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar gate.GateKt
+          code=$?
+          set -e
+          echo
+          case $code in
+            0) echo "Gate green: both fingerprints unchanged." ;;
+            1) echo "::error::A fingerprint moved. The breakdown above is the argument; the owner re-records, not the agent." ;;
+            2) echo "::error::EXPECTED UNTIL STEP 2 — no engine to fingerprint. This job is red on purpose (GAME_BRIEF.md §6). It goes green when step 2 wires an engine in and the owner records the first baseline." ;;
+            3) echo "::error::No baseline recorded. The owner records it, not the agent (§1.2)." ;;
+            4) echo "::error::The gate refused --record. Re-recording is the owner's call." ;;
+            *) echo "::error::Gate exited $code, which it is not supposed to be able to do." ;;
+          esac
+          exit $code
