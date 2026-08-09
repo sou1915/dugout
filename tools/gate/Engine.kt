@@ -20,12 +20,12 @@ interface Gateable {
 }
 
 /**
- * Step 1 has no engine. This is not a placeholder that will be forgotten: the
- * gate fails loudly on it, and CI is red until step 2 wires an engine in and
- * the owner records the first baseline.
+ * Step 2 wired the simulation in. The gate now hashes 200 fixed-seed matches
+ * and will refuse to pass until a baseline exists — which the owner records,
+ * not the agent.
  */
 object EngineRegistry {
-    val engine: Gateable? = null
+    val engine: Gateable? = SimGate
 
     const val MATCHES = 200
     const val FIRST_SEED = 1_000L

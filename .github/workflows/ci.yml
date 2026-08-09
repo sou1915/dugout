@@ -59,12 +59,15 @@ jobs:
       # Everything compiles headless against the Java2D shim. This is the claim
       # in §1.1 and it is checked on every push, from the first push, so it can
       # never quietly stop being true.
-      - name: Compile the shim and the gate
+      - name: Compile the engine, the renderer and the gate
         run: |
           export PATH="$PATH:$HOME/kotlinc/bin"
+          SRC=app/src/main/java/com/dugout/career
           kotlinc -nowarn \
+            $SRC/sim/*.kt $SRC/ui/*.kt \
             tools/shim/*.kt \
             tools/gate/*.kt \
+            tools/harness/*.kt \
             -include-runtime -d build/gate.jar
 
       # The one part of the gate that can be proved before an engine exists:
@@ -73,8 +76,29 @@ jobs:
       - name: Gate selftest — the readable breakdown
         run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar gate.GateKt --selftest
 
-      # The gate itself. Red until step 2, on purpose. The exit codes are
-      # translated here so the log says which kind of red it is.
+      # Does a tactical setting move the football? A dead lever prints its own
+      # verdict here rather than being discovered months later in a sweep.
+      - name: ShapeCheck — line height and block width
+        run: |
+          java $JAVA_OPTS_ENCODING -Djava.awt.headless=true \
+            -cp build/gate.jar harness.ShapeCheckKt 8 | tee shapecheck.txt
+          grep -q "VERDICT: line height moves the block" shapecheck.txt \
+            || { echo "::error::ShapeCheck says the line-height lever is dead."; exit 1; }
+
+      # Render frames and look at them. Uploaded so they can be looked at from
+      # a phone, which is the whole point of the debug renderer existing at
+      # step 2 rather than step 10.
+      - name: Debug frames
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.FilmKt build/film 1000
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debug-frames
+          path: build/film/*.png
+          if-no-files-found: error
+
+      # The gate itself. Red until the owner records a baseline. The exit codes
+      # are translated here so the log says which kind of red it is.
       - name: Fingerprint gate
         run: |
           set +e
@@ -86,7 +110,7 @@ jobs:
             0) echo "Gate green: both fingerprints unchanged." ;;
             1) echo "::error::A fingerprint moved. The breakdown above is the argument; the owner re-records, not the agent." ;;
             2) echo "::error::EXPECTED UNTIL STEP 2 — no engine to fingerprint. This job is red on purpose (GAME_BRIEF.md §6). It goes green when step 2 wires an engine in and the owner records the first baseline." ;;
-            3) echo "::error::No baseline recorded. The owner records it, not the agent (§1.2)." ;;
+            3) echo "::error::EXPECTED UNTIL THE BASELINE IS RECORDED — the engine ran and both fingerprints were computed, but there is nothing to compare them against. build/baseline.proposed.properties has the lines; the owner records them, not the agent (§1.2)." ;;
             4) echo "::error::The gate refused --record. Re-recording is the owner's call." ;;
             *) echo "::error::Gate exited $code, which it is not supposed to be able to do." ;;
           esac

@@ -4,14 +4,17 @@ Nothing in here ships. It is the machinery that makes a claim about the game
 measurable, and by `GAME_BRIEF.md` §6 it exists before the first match is
 simulated.
 
-## What is here at step 1
+## What is here
 
 ```
 tools/shim/AndroidGraphics.kt   Java2D stand-in for Canvas, Paint, Path, Bitmap
 tools/gate/Digest.kt            the two fingerprints, and the readable breakdown
 tools/gate/Engine.kt            the contract an engine must satisfy to be gated
+tools/gate/SimGate.kt           the adapter between the football and the gate
 tools/gate/Gate.kt              the gate itself
-tools/gate/baseline.properties  DOES NOT EXIST YET — the owner records it at step 2
+tools/gate/baseline.properties  DOES NOT EXIST YET — the owner records it
+tools/harness/ShapeCheck.kt     does a setting move the block? with a control row
+tools/harness/Film.kt           debug frames as PNGs
 ```
 
 The shim is carried over intact from the predecessor, which is the point of
@@ -26,11 +29,19 @@ No Gradle, no plugins, no dependencies. Kotlin compiler and a JVM.
 ```sh
 export PATH="$PATH:$HOME/kotlinc/bin"
 
-kotlinc -nowarn tools/shim/*.kt tools/gate/*.kt -include-runtime -d build/gate.jar
+SRC=app/src/main/java/com/dugout/career
+kotlinc -nowarn $SRC/sim/*.kt $SRC/ui/*.kt \
+    tools/shim/*.kt tools/gate/*.kt tools/harness/*.kt \
+    -include-runtime -d build/gate.jar
 
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar gate.GateKt --selftest
+java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.ShapeCheckKt 8
+java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.FilmKt build/film 1000
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar gate.GateKt
 ```
+
+The compile line is the one CI uses, so a thing that builds here builds there.
+The gate is 200 matches and takes about 35 seconds.
 
 `-Dstdout.encoding=UTF-8` is not decoration: on a container with a POSIX locale
 the breakdown arrives as question marks, which is the readable-breakdown
@@ -48,15 +59,21 @@ requirement of §1.2 failed on a technicality.
 
 ## Why the gate is red right now
 
-There is no engine. `EngineRegistry.engine` is `null`, so there is nothing to
-hash and nothing to compare, and the gate says so and exits 2. That is the
-correct colour: a gate that reported success against an empty engine would be
-worse than no gate, because it would teach everyone to read green as meaning
-nothing.
+The engine exists and both fingerprints are computed, but **no baseline has
+been recorded**, so there is nothing to compare them against and the gate exits
+3. That is still the correct colour.
 
-It goes green when step 2 has eleven men moving, implements `gate.Gateable`,
-points `EngineRegistry.engine` at it — **and the owner records the first
-baseline.** An agent does not record a baseline, and `--record` refuses.
+Running the gate writes `build/baseline.proposed.properties` — 1,155 lines, the
+two hashes and every quantised component. It does **not** write
+`tools/gate/baseline.properties`. When the football behind those numbers looks
+right:
+
+```sh
+cp build/baseline.proposed.properties tools/gate/baseline.properties
+```
+
+That is the owner's call and nobody else's (§1.2), and `--record` refuses for
+the same reason.
 
 ## The one thing already proved
 

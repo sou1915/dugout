@@ -103,20 +103,30 @@ class ShapeDigest {
          * The component set, declared in one place so the digest a run
          * produces and the digest a baseline records cannot drift apart.
          *
-         * Step 2 fills these in as eleven men move; step 1 only declares them.
+         * Per team, per five-minute bucket, as §1.2 specifies. The bucket
+         * dimension is what lets the breakdown say "the shape changed in the
+         * last ten minutes" — an aggregate over the whole match would average
+         * that away, and a late collapse is exactly the kind of thing a
+         * fingerprint is for.
          */
         fun declare(): ShapeDigest {
             val d = ShapeDigest()
-            for (team in arrayOf("home", "away")) {
-                d.stat("$team.block_depth_m", 0.5)
-                d.stat("$team.goal_side_in_box", 0.25)
-                for (lane in LANES) for (band in 0 until 6)
-                    d.stat("$team.occupancy.$lane.b$band", 0.25)
-            }
+            for (team in arrayOf("home", "away"))
+                for (t in 0 until BUCKETS) {
+                    val b = "$team.t" + (if (t < 10) "0$t" else "$t")
+                    d.stat("$b.block_depth_m", 0.5)
+                    d.stat("$b.goal_side_in_box", 0.25)
+                    for (lane in LANES) for (band in 0 until BANDS)
+                        d.stat("$b.occ.$lane.b$band", 0.25)
+                }
             return d
         }
 
         val LANES = arrayOf("lw", "lhs", "c", "rhs", "rw")
+        const val BANDS = 6
+
+        /** Five-minute buckets across ninety minutes. */
+        const val BUCKETS = 18
     }
 }
 
@@ -162,4 +172,37 @@ fun printBreakdown(moved: List<Moved>, out: Appendable = System.out) {
     out.append("  ${moved.size} statistic(s) moved, worst first:\n")
     for (m in moved.take(20)) { out.append(m.line()); out.append('\n') }
     if (moved.size > 20) out.append("  ... and ${moved.size - 20} more\n")
+}
+
+/**
+ * Resolved references into a digest, so feeding it during a match is array
+ * indexing rather than building a string per statistic per second.
+ *
+ * Built once per gate run. Twenty thousand string concatenations a match is
+ * the sort of cost that gets discovered as "the gate is slow" three weeks
+ * later and blamed on the football.
+ */
+class ShapeIndex(d: ShapeDigest) {
+    val depth = Array(2) { s ->
+        Array(ShapeDigest.BUCKETS) { t -> d.stat("${pre(s, t)}.block_depth_m", 0.5) }
+    }
+    val goalSide = Array(2) { s ->
+        Array(ShapeDigest.BUCKETS) { t -> d.stat("${pre(s, t)}.goal_side_in_box", 0.25) }
+    }
+    val occ = Array(2) { s ->
+        Array(ShapeDigest.BUCKETS) { t ->
+            Array(ShapeDigest.LANES.size * ShapeDigest.BANDS) { i ->
+                val lane = ShapeDigest.LANES[i / ShapeDigest.BANDS]
+                val band = i % ShapeDigest.BANDS
+                d.stat("${pre(s, t)}.occ.$lane.b$band", 0.25)
+            }
+        }
+    }
+
+    private companion object {
+        fun pre(side: Int, t: Int): String {
+            val team = if (side == 0) "home" else "away"
+            return "$team.t" + (if (t < 10) "0$t" else "$t")
+        }
+    }
 }

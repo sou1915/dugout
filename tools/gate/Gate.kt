@@ -70,11 +70,27 @@ private fun gate(): Int {
         println("  result fingerprint  $resultHash")
         println("  shape fingerprint   $shapeHash")
         println()
-        println("The owner records the baseline, not the agent (§1.2). The lines are:")
+        val lines = ArrayList<String>()
+        lines.add("# Recorded by the owner. See GAME_BRIEF.md §1.2.")
+        lines.add("result.hash=$resultHash")
+        lines.add("shape.hash=$shapeHash")
+        lines.addAll(digest.asBaselineLines())
+
+        val proposed = File("build/baseline.proposed.properties")
+        proposed.parentFile?.mkdirs()
+        proposed.writeText(lines.joinToString("\n") + "\n")
+
+        println("The owner records the baseline, not the agent (§1.2).")
+        println("The proposed file — ${lines.size} lines — has been written to:")
         println()
-        println("  result.hash=$resultHash")
-        println("  shape.hash=$shapeHash")
-        digest.asBaselineLines().forEach { println("  $it") }
+        println("  ${proposed.path}")
+        println()
+        println("Read it, and if the football behind it is right:")
+        println("  cp ${proposed.path} $BASELINE")
+        println()
+        println("First few components, so the shape of it is visible here:")
+        digest.asBaselineLines().take(6).forEach { println("  $it") }
+        println("  ... and ${digest.components().size - 6} more")
         return NO_BASELINE
     }
 
@@ -147,8 +163,8 @@ private fun selfTest(): Int {
 
     // A digest identical to its baseline moves nothing.
     val a = ShapeDigest.declare()
-    a.stat("home.block_depth_m", 0.5).add(32.0)
-    a.stat("home.goal_side_in_box", 0.25).add(8.5)
+    a.stat("home.t00.block_depth_m", 0.5).add(32.0)
+    a.stat("home.t00.goal_side_in_box", 0.25).add(8.5)
     val same = a.asBaselineLines().associate {
         val (k, v) = it.split("="); k to v.toLong()
     }
@@ -156,31 +172,31 @@ private fun selfTest(): Int {
 
     // Move one statistic by a known amount and see it named.
     val b = ShapeDigest.declare()
-    b.stat("home.block_depth_m", 0.5).add(34.5)      // +2.5 m = +5 quanta
-    b.stat("home.goal_side_in_box", 0.25).add(8.5)   // unchanged
+    b.stat("home.t00.block_depth_m", 0.5).add(34.5)      // +2.5 m = +5 quanta
+    b.stat("home.t00.goal_side_in_box", 0.25).add(8.5)   // unchanged
     val moved = diff(b, same)
     check("one moved statistic is reported", moved.size == 1)
-    check("it is named", moved.firstOrNull()?.name == "home.block_depth_m")
+    check("it is named", moved.firstOrNull()?.name == "home.t00.block_depth_m")
     check("its delta is +5 quanta", moved.firstOrNull()?.delta == 5L)
 
     // A change smaller than the quantum is not a change.
     val c = ShapeDigest.declare()
-    c.stat("home.block_depth_m", 0.5).add(32.2)      // +0.2 m, inside the quantum
-    c.stat("home.goal_side_in_box", 0.25).add(8.5)
+    c.stat("home.t00.block_depth_m", 0.5).add(32.2)      // +0.2 m, inside the quantum
+    c.stat("home.t00.goal_side_in_box", 0.25).add(8.5)
     check("a sub-quantum change is not reported", diff(c, same).isEmpty())
 
     // Worst offender first.
     val d = ShapeDigest.declare()
-    d.stat("home.block_depth_m", 0.5).add(33.0)      // +2 quanta
-    d.stat("home.goal_side_in_box", 0.25).add(6.0)   // -10 quanta
+    d.stat("home.t00.block_depth_m", 0.5).add(33.0)      // +2 quanta
+    d.stat("home.t00.goal_side_in_box", 0.25).add(6.0)   // -10 quanta
     val ordered = diff(d, same)
     check("the breakdown is sorted worst first",
-        ordered.map { it.name } == listOf("home.goal_side_in_box", "home.block_depth_m"))
+        ordered.map { it.name } == listOf("home.t00.goal_side_in_box", "home.t00.block_depth_m"))
 
     // The digest hash is a function of the statistics, not of insertion order.
     val e = ShapeDigest.declare()
-    e.stat("home.goal_side_in_box", 0.25).add(8.5)
-    e.stat("home.block_depth_m", 0.5).add(32.0)
+    e.stat("home.t00.goal_side_in_box", 0.25).add(8.5)
+    e.stat("home.t00.block_depth_m", 0.5).add(32.0)
     check("the hash does not depend on insertion order", a.hex() == e.hex())
     check("the hash moves when a statistic moves", a.hex() != b.hex())
 
