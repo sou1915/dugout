@@ -14,6 +14,9 @@ tools/gate/SimGate.kt           the adapter between the football and the gate
 tools/gate/Gate.kt              the gate itself
 tools/gate/baseline.properties  DOES NOT EXIST YET — the owner records it
 tools/harness/EventCensus.kt    every event counted, against the §5 bands
+tools/harness/RoleCheck.kt      do roles separate? the decoration test
+tools/harness/OptionCensus.kt   the option set off-ball movement offers
+tools/harness/RoleFilm.kt       two frames, one role changed
 tools/harness/ShapeCheck.kt     does a setting move the block? with a control row
 tools/harness/Film.kt           debug frames as PNGs
 ```
@@ -37,13 +40,15 @@ kotlinc -nowarn $SRC/sim/*.kt $SRC/ui/*.kt \
 
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar gate.GateKt --selftest
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.EventCensusKt 40
+java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.RoleCheckKt 4
+java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.OptionCensusKt 20
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.ShapeCheckKt 8
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.FilmKt build/film 1000
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar gate.GateKt
 ```
 
 The compile line is the one CI uses, so a thing that builds here builds there.
-The gate is 200 matches and takes about 35 seconds.
+The gate is 200 matches and takes about 70 seconds.
 
 `-Dstdout.encoding=UTF-8` is not decoration: on a container with a POSIX locale
 the breakdown arrives as question marks, which is the readable-breakdown

@@ -85,6 +85,22 @@ jobs:
           grep -q "VERDICT: line height moves the block" shapecheck.txt \
             || { echo "::error::ShapeCheck says the line-height lever is dead."; exit 1; }
 
+      # Roles must not be decoration. Same slot, same anchor, same seeds, one
+      # role changed — if any pair of roles ever collapses into the same heat
+      # map again, this fails the build.
+      - name: RoleCheck — every role separates
+        run: |
+          java $JAVA_OPTS_ENCODING -Djava.awt.headless=true \
+            -cp build/gate.jar harness.RoleCheckKt 4 | tee rolecheck.txt
+          grep -q "VERDICT: every pair separates" rolecheck.txt \
+            || { echo "::error::A role pair collapsed — RoleCheck says some role is decoration."; exit 1; }
+
+      # The option set the off-ball layer offers. Printed, NOT gated: it does
+      # not clear the §5 bar yet, and whether the bar or the football is wrong
+      # is the owner's call, not something to be quietly tuned around.
+      - name: OptionCensus — the §5 option-set bar
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.OptionCensusKt 20
+
       # The census. Printed for the record, not gated: with no decision layer
       # every acceptance row is either unwired or noise, and gating on noise is
       # how a project starts tuning against a number that means nothing. It
@@ -96,7 +112,9 @@ jobs:
       # a phone, which is the whole point of the debug renderer existing at
       # step 2 rather than step 10.
       - name: Debug frames
-        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.FilmKt build/film 1000
+        run: |
+          java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.FilmKt build/film 1000
+          java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.RoleFilmKt build/film
 
       - uses: actions/upload-artifact@v4
         with:

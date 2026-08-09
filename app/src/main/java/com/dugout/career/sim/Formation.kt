@@ -16,9 +16,20 @@ data class Slot(
     val id: Int,
     val lane: Float,
     val band: Float,
+    val role: RoleId = RoleId.BOX_TO_BOX,
     val duty: Duty = Duty.SUPPORT
 ) {
     val isKeeper: Boolean get() = id == 0
+
+    /**
+     * Which way the centre is from him. One number in a role then works on
+     * either flank, and asymmetry stays free.
+     */
+    val towardCentre: Float get() = when {
+        lane < 1.95f -> 1f
+        lane > 2.05f -> -1f
+        else -> 0f
+    }
 }
 
 /**
@@ -49,8 +60,16 @@ class Formation(val name: String, val slots: List<Slot>, val block: Block = Bloc
      */
     fun compile(inPossession: Boolean, outAx: FloatArray, outAy: FloatArray) {
         for (s in slots) {
-            outAx[s.id] = Pitch.bandCentre(s.band)
-            outAy[s.id] = Pitch.laneCentre(s.lane)
+            val role = Roles[s.role]
+            val duty = Roles.mod(s.duty)
+            // Role first, duty as a transform on top of it. Nowhere in the
+            // engine is there a branch on WHICH role this is.
+            val band = s.band +
+                (if (inPossession) role.bandIn else role.bandOut) + duty.bandPush
+            val lane = s.lane +
+                (if (inPossession) role.laneIn else role.laneOut) * s.towardCentre
+            outAx[s.id] = Pitch.bandCentre(band.coerceIn(0f, 5.4f))
+            outAy[s.id] = Pitch.laneCentre(lane.coerceIn(0f, 4f))
         }
 
         val wantWidth = if (inPossession) block.widthInPoss else block.widthOutPoss
@@ -99,45 +118,49 @@ class Formation(val name: String, val slots: List<Slot>, val block: Block = Bloc
          */
         fun preset(name: String): Formation = when (name) {
             "4-3-3" -> Formation("4-3-3", listOf(
-                Slot(0, 2.0f, 0.2f, Duty.DEFEND),
-                Slot(1, 0.4f, 1.5f, Duty.SUPPORT),   // left back
-                Slot(2, 1.4f, 1.0f, Duty.DEFEND),
-                Slot(3, 2.6f, 1.0f, Duty.DEFEND),
-                Slot(4, 3.6f, 1.5f, Duty.SUPPORT),   // right back
-                Slot(5, 2.0f, 2.0f, Duty.DEFEND),    // holding
-                Slot(6, 1.3f, 2.8f, Duty.SUPPORT),
-                Slot(7, 2.7f, 2.8f, Duty.SUPPORT),
-                Slot(8, 0.2f, 3.9f, Duty.ATTACK),    // left wing
-                Slot(9, 2.0f, 4.3f, Duty.ATTACK),    // centre forward
-                Slot(10, 3.8f, 3.9f, Duty.ATTACK)    // right wing
+                Slot(0, 2.0f, 0.2f, RoleId.GK, Duty.DEFEND),
+                Slot(1, 0.4f, 1.5f, RoleId.OVERLAPPING_FB, Duty.SUPPORT),
+                Slot(2, 1.4f, 1.0f, RoleId.BALL_PLAYING_DEFENDER, Duty.DEFEND),
+                Slot(3, 2.6f, 1.0f, RoleId.COVER, Duty.DEFEND),
+                Slot(4, 3.6f, 1.5f, RoleId.OVERLAPPING_FB, Duty.SUPPORT),
+                Slot(5, 2.0f, 2.0f, RoleId.HOLDING_MID, Duty.DEFEND),
+                Slot(6, 1.3f, 2.8f, RoleId.BOX_TO_BOX, Duty.SUPPORT),
+                Slot(7, 2.7f, 2.8f, RoleId.ADVANCED_PLAYMAKER, Duty.SUPPORT),
+                Slot(8, 0.2f, 3.9f, RoleId.TOUCHLINE_WINGER, Duty.ATTACK),
+                Slot(9, 2.0f, 4.3f, RoleId.POACHER, Duty.ATTACK),
+                Slot(10, 3.8f, 3.9f, RoleId.TOUCHLINE_WINGER, Duty.ATTACK)
             ))
             "4-4-2" -> Formation("4-4-2", listOf(
-                Slot(0, 2.0f, 0.2f, Duty.DEFEND),
-                Slot(1, 0.5f, 1.4f, Duty.SUPPORT),
-                Slot(2, 1.4f, 1.0f, Duty.DEFEND),
-                Slot(3, 2.6f, 1.0f, Duty.DEFEND),
-                Slot(4, 3.5f, 1.4f, Duty.SUPPORT),
-                Slot(5, 0.4f, 2.7f, Duty.SUPPORT),
-                Slot(6, 1.5f, 2.5f, Duty.SUPPORT),
-                Slot(7, 2.5f, 2.5f, Duty.SUPPORT),
-                Slot(8, 3.6f, 2.7f, Duty.SUPPORT),
-                Slot(9, 1.6f, 4.1f, Duty.ATTACK),
-                Slot(10, 2.4f, 4.1f, Duty.ATTACK)
+                Slot(0, 2.0f, 0.2f, RoleId.GK, Duty.DEFEND),
+                Slot(1, 0.5f, 1.4f, RoleId.OVERLAPPING_FB, Duty.SUPPORT),
+                Slot(2, 1.4f, 1.0f, RoleId.STOPPER, Duty.DEFEND),
+                Slot(3, 2.6f, 1.0f, RoleId.COVER, Duty.DEFEND),
+                Slot(4, 3.5f, 1.4f, RoleId.OVERLAPPING_FB, Duty.SUPPORT),
+                Slot(5, 0.4f, 2.7f, RoleId.TOUCHLINE_WINGER, Duty.SUPPORT),
+                Slot(6, 1.5f, 2.5f, RoleId.BOX_TO_BOX, Duty.SUPPORT),
+                Slot(7, 2.5f, 2.5f, RoleId.DEEP_PLAYMAKER, Duty.SUPPORT),
+                Slot(8, 3.6f, 2.7f, RoleId.TOUCHLINE_WINGER, Duty.SUPPORT),
+                Slot(9, 1.6f, 4.1f, RoleId.TARGET_MAN, Duty.ATTACK),
+                Slot(10, 2.4f, 4.1f, RoleId.POACHER, Duty.ATTACK)
             ))
             "3-5-2" -> Formation("3-5-2", listOf(
-                Slot(0, 2.0f, 0.2f, Duty.DEFEND),
-                Slot(1, 1.1f, 1.0f, Duty.DEFEND),
-                Slot(2, 2.0f, 0.9f, Duty.DEFEND),
-                Slot(3, 2.9f, 1.0f, Duty.DEFEND),
-                Slot(4, 0.2f, 2.6f, Duty.ATTACK),    // wing back
-                Slot(5, 3.8f, 2.6f, Duty.ATTACK),    // wing back
-                Slot(6, 2.0f, 2.1f, Duty.DEFEND),
-                Slot(7, 1.3f, 3.0f, Duty.SUPPORT),
-                Slot(8, 2.7f, 3.0f, Duty.SUPPORT),
-                Slot(9, 1.6f, 4.2f, Duty.ATTACK),
-                Slot(10, 2.4f, 4.2f, Duty.ATTACK)
+                Slot(0, 2.0f, 0.2f, RoleId.GK, Duty.DEFEND),
+                Slot(1, 1.1f, 1.0f, RoleId.BALL_PLAYING_DEFENDER, Duty.DEFEND),
+                Slot(2, 2.0f, 0.9f, RoleId.COVER, Duty.DEFEND),
+                Slot(3, 2.9f, 1.0f, RoleId.STOPPER, Duty.DEFEND),
+                Slot(4, 0.2f, 2.6f, RoleId.OVERLAPPING_FB, Duty.ATTACK),
+                Slot(5, 3.8f, 2.6f, RoleId.OVERLAPPING_FB, Duty.ATTACK),
+                Slot(6, 2.0f, 2.1f, RoleId.HOLDING_MID, Duty.DEFEND),
+                Slot(7, 1.3f, 3.0f, RoleId.BOX_TO_BOX, Duty.SUPPORT),
+                Slot(8, 2.7f, 3.0f, RoleId.ADVANCED_PLAYMAKER, Duty.SUPPORT),
+                Slot(9, 1.6f, 4.2f, RoleId.TARGET_MAN, Duty.ATTACK),
+                Slot(10, 2.4f, 4.2f, RoleId.POACHER, Duty.ATTACK)
             ))
             else -> throw IllegalArgumentException("no preset '$name'")
         }
+
+        /** Same shape, one man's role changed — the control for RoleCheck. */
+        fun withRole(f: Formation, slotId: Int, role: RoleId): Formation =
+            Formation(f.name, f.slots.map { if (it.id == slotId) it.copy(role = role) else it }, f.block)
     }
 }

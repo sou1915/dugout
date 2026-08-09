@@ -27,6 +27,32 @@ class Man(
     @JvmField var targetY = 0f
     @JvmField var deadline = 1f
 
+    /** Resolved once, not looked up per tick. */
+    @JvmField val role: Role = Roles[slot.role]
+    private val duty: DutyMod = Roles.mod(slot.duty)
+
+    /** How far the block's slide may carry him from his anchor. */
+    @JvmField val leashM: Float = role.leashM * duty.leashScale
+
+    /**
+     * How reluctant he is to go a long way for it, 0..1.
+     *
+     * The first version of this was a flat penalty in seconds and it was
+     * WRONG — measured, not guessed. At a three second scale against claim
+     * times of one to three seconds it stopped being a tilt and became a veto:
+     * `RoleCheck` showed ten of fourteen roles taking 0.0 touches a match, so
+     * most roles could never produce an event at all.
+     *
+     * The honest model is that reluctance scales with DISTANCE. A poacher is as
+     * quick as anyone to a ball at his feet; what he will not do is sprint
+     * thirty metres back for one. So this multiplies a distance term at the
+     * claim, and a man near the ball is never handicapped for his role.
+     */
+    @JvmField val reluctance: Float =
+        1f - (role.chase * duty.chaseScale).coerceIn(0f, 1f)
+
+    @JvmField val maxAttX: Float = role.maxAttX
+
     val isKeeper: Boolean get() = slot.isKeeper
 
     val topSpeed: Float get() = if (isKeeper) 6.4f else 7.6f
