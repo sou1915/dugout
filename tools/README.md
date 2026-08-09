@@ -13,6 +13,7 @@ tools/gate/Engine.kt            the contract an engine must satisfy to be gated
 tools/gate/SimGate.kt           the adapter between the football and the gate
 tools/gate/Gate.kt              the gate itself
 tools/gate/baseline.properties  DOES NOT EXIST YET — the owner records it
+tools/harness/EventCensus.kt    every event counted, against the §5 bands
 tools/harness/ShapeCheck.kt     does a setting move the block? with a control row
 tools/harness/Film.kt           debug frames as PNGs
 ```
@@ -35,6 +36,7 @@ kotlinc -nowarn $SRC/sim/*.kt $SRC/ui/*.kt \
     -include-runtime -d build/gate.jar
 
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar gate.GateKt --selftest
+java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.EventCensusKt 40
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.ShapeCheckKt 8
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar harness.FilmKt build/film 1000
 java -Dstdout.encoding=UTF-8 -Djava.awt.headless=true -cp build/gate.jar gate.GateKt

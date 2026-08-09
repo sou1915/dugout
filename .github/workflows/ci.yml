@@ -85,6 +85,13 @@ jobs:
           grep -q "VERDICT: line height moves the block" shapecheck.txt \
             || { echo "::error::ShapeCheck says the line-height lever is dead."; exit 1; }
 
+      # The census. Printed for the record, not gated: with no decision layer
+      # every acceptance row is either unwired or noise, and gating on noise is
+      # how a project starts tuning against a number that means nothing. It
+      # becomes a gate when the decision layer lands.
+      - name: EventCensus — the vocabulary and the §5 bands
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.EventCensusKt 40
+
       # Render frames and look at them. Uploaded so they can be looked at from
       # a phone, which is the whole point of the debug renderer existing at
       # step 2 rather than step 10.

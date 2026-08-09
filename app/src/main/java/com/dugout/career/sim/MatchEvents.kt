@@ -1,0 +1,155 @@
+package com.dugout.career.sim
+
+enum class EvGroup { ON_BALL, PASSING, SHOOTING, DEFENDING, GOALKEEPING, FOULS, RESTARTS, MATCH }
+
+/**
+ * THE EVENT VOCABULARY — everything a football match contains.
+ *
+ * Most of these do not happen yet, and that is the entire point. This is not a
+ * description of what the engine currently does; it is the LIST OF THE JOB, and
+ * the census that walks it turns "there is nothing happening in the simulation"
+ * into a column with sixty zeros in it, each one named and addressable.
+ *
+ * [wired] is the thing that keeps that column honest. It says whether the
+ * engine has a site that can fire this event at all. Without it, "0.00 a match"
+ * means either "not implemented" or "implemented and never happens", and the
+ * predecessor lost months to exactly that ambiguity three separate times —
+ * `v2Defend` written and never called, `CHANCE_QUALITY` swept while dead,
+ * `Scene.TAKE_ON` reachable only from a path that no longer ran.
+ *
+ * A wired event reading zero is a bug. An unwired event reading zero is a
+ * to-do. They must never look the same in a table.
+ */
+enum class Ev(val group: EvGroup, val wired: Boolean = false) {
+
+    // ------------------------------------------------------------- on the ball
+    CARRY(EvGroup.ON_BALL),
+    SHIELD_BALL(EvGroup.ON_BALL),
+    TURN_AWAY(EvGroup.ON_BALL),
+    TAKE_ON_ATTEMPT(EvGroup.ON_BALL),
+    TAKE_ON_WON(EvGroup.ON_BALL),
+    TAKE_ON_LOST(EvGroup.ON_BALL),
+    NUTMEG(EvGroup.ON_BALL),
+    BACKHEEL(EvGroup.ON_BALL),
+    FLICK_ON(EvGroup.ON_BALL),
+    FIRST_TOUCH_GOOD(EvGroup.ON_BALL),
+    FIRST_TOUCH_HEAVY(EvGroup.ON_BALL),
+    DISPOSSESSED(EvGroup.ON_BALL),
+
+    // ---------------------------------------------------------------- passing
+    /** A struck ball that travelled under 24 m. Length is a fact; intent is not. */
+    PASS_SHORT(EvGroup.PASSING, wired = true),
+    PASS_LONG(EvGroup.PASSING, wired = true),
+    /** First touched by a team-mate of the man who struck it. */
+    PASS_COMPLETED(EvGroup.PASSING, wired = true),
+    PASS_SWITCH(EvGroup.PASSING),
+    THROUGH_BALL(EvGroup.PASSING),
+    ONE_TWO(EvGroup.PASSING),
+    CROSS_EARLY(EvGroup.PASSING),
+    CROSS_BYLINE(EvGroup.PASSING),
+    CUT_BACK(EvGroup.PASSING),
+    PASS_CLIPPED(EvGroup.PASSING),
+    PASS_DRIVEN(EvGroup.PASSING),
+    PASS_MISPLACED(EvGroup.PASSING),
+
+    // --------------------------------------------------------------- shooting
+    SHOT_PLACED(EvGroup.SHOOTING),
+    SHOT_DRIVEN(EvGroup.SHOOTING),
+    SHOT_CHIPPED(EvGroup.SHOOTING),
+    SHOT_VOLLEY(EvGroup.SHOOTING),
+    SHOT_HEADER(EvGroup.SHOOTING),
+    SHOT_LONG_RANGE(EvGroup.SHOOTING),
+    SHOT_FIRST_TIME(EvGroup.SHOOTING),
+    SHOT_ON_TARGET(EvGroup.SHOOTING),
+    SHOT_OFF_TARGET(EvGroup.SHOOTING),
+    SHOT_BLOCKED(EvGroup.SHOOTING),
+    SHOT_DEFLECTED(EvGroup.SHOOTING),
+    WOODWORK(EvGroup.SHOOTING),
+    REBOUND(EvGroup.SHOOTING),
+    /** The ball crossed the line between the posts. Geometry, not intent. */
+    GOAL(EvGroup.SHOOTING, wired = true),
+    OWN_GOAL(EvGroup.SHOOTING),
+
+    // -------------------------------------------------------------- defending
+    /** An opponent of the striker got the first touch. */
+    INTERCEPTION(EvGroup.DEFENDING, wired = true),
+    BLOCK(EvGroup.DEFENDING),
+    CLEARANCE_HOOFED(EvGroup.DEFENDING),
+    CLEARANCE_HEADED(EvGroup.DEFENDING),
+    TACKLE_STANDING(EvGroup.DEFENDING),
+    TACKLE_SLIDING(EvGroup.DEFENDING),
+    TACKLE_LAST_DITCH(EvGroup.DEFENDING),
+    RECOVERY_RUN(EvGroup.DEFENDING),
+    GOAL_LINE_CLEARANCE(EvGroup.DEFENDING),
+    OFFSIDE_TRAP_SPRUNG(EvGroup.DEFENDING),
+    OFFSIDE(EvGroup.DEFENDING),
+
+    // ------------------------------------------------------------ goalkeeping
+    SAVE_ROUTINE(EvGroup.GOALKEEPING),
+    SAVE_DIVING(EvGroup.GOALKEEPING),
+    SAVE_TIP_OVER(EvGroup.GOALKEEPING),
+    SAVE_PARRY(EvGroup.GOALKEEPING),
+    SAVE_PENALTY(EvGroup.GOALKEEPING),
+    KEEPER_CLAIM_CROSS(EvGroup.GOALKEEPING),
+    KEEPER_PUNCH(EvGroup.GOALKEEPING),
+    KEEPER_SWEEP(EvGroup.GOALKEEPING),
+    KEEPER_DISTRIBUTION(EvGroup.GOALKEEPING),
+
+    // ------------------------------------------------------ fouls, discipline
+    FOUL(EvGroup.FOULS),
+    FOUL_ADVANTAGE(EvGroup.FOULS),
+    FOUL_IN_BOX(EvGroup.FOULS),
+    HANDBALL(EvGroup.FOULS),
+    PROFESSIONAL_FOUL(EvGroup.FOULS),
+    CARD_YELLOW(EvGroup.FOULS),
+    CARD_SECOND_YELLOW(EvGroup.FOULS),
+    CARD_RED(EvGroup.FOULS),
+
+    // -------------------------------------------------- set pieces, restarts
+    THROW_IN(EvGroup.RESTARTS, wired = true),
+    THROW_LONG(EvGroup.RESTARTS),
+    GOAL_KICK(EvGroup.RESTARTS, wired = true),
+    CORNER_WON(EvGroup.RESTARTS, wired = true),
+    CORNER_TAKEN(EvGroup.RESTARTS, wired = true),
+    FREE_KICK_DIRECT(EvGroup.RESTARTS),
+    FREE_KICK_INDIRECT(EvGroup.RESTARTS),
+    PENALTY_AWARDED(EvGroup.RESTARTS),
+    PENALTY_SCORED(EvGroup.RESTARTS),
+    PENALTY_MISSED(EvGroup.RESTARTS),
+    DROP_BALL(EvGroup.RESTARTS),
+
+    // ------------------------------------------------------ the match itself
+    KICK_OFF(EvGroup.MATCH, wired = true),
+    HALF_TIME(EvGroup.MATCH, wired = true),
+    FULL_TIME(EvGroup.MATCH, wired = true),
+    SUBSTITUTION(EvGroup.MATCH),
+    INJURY_KNOCK(EvGroup.MATCH),
+    INJURY_SERIOUS(EvGroup.MATCH);
+
+    companion object {
+        val ALL: List<Ev> = entries
+        val WIRED: List<Ev> = entries.filter { it.wired }
+    }
+}
+
+/**
+ * Where every event goes.
+ *
+ * One recorder, and nothing outside it counts anything. That is the whole
+ * defence against the predecessor's recurring failure, where a scene was wired
+ * directly into one engine's decision path and then died in silence when the
+ * caller moved: if the engine reports WHAT HAPPENED to one place, a census can
+ * always ask that place what happened.
+ */
+class EventLog {
+    @JvmField val total = IntArray(Ev.ALL.size)
+    @JvmField val bySide = Array(2) { IntArray(Ev.ALL.size) }
+
+    fun fire(e: Ev, side: Int) {
+        total[e.ordinal]++
+        if (side in 0..1) bySide[side][e.ordinal]++
+    }
+
+    operator fun get(e: Ev): Int = total[e.ordinal]
+    fun side(e: Ev, s: Int): Int = bySide[s][e.ordinal]
+}
