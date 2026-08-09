@@ -57,6 +57,17 @@ they are the reason anything here can be trusted.
    stand — which is this game's entire subject, and is never cosmetic. A result
    hash alone cannot see that: a change can ruin the shape and leave the
    scoreline untouched, and it would pass clean.
+
+   **The shape hash ships with a readable breakdown, not just a digest.** A hash
+   that only says "different" is a shrug, and a gate that is re-recorded on a
+   shrug dies the way the predecessor's harness died. So when the shape hash
+   moves, the gate prints *which* quantised statistic moved and by how much,
+   against its recorded value: block depth, goal-side count in the box, lane
+   occupancy per band, and every other component of the digest, worst offender
+   first. Re-recording a baseline is then an argument somebody can read and
+   disagree with. **Re-recording is the owner's call and never the agent's**, and
+   an agent that believes the new football is correct stops and says so, with the
+   printed breakdown as its case.
 3. **Separate RNG streams.** One stream decides outcomes, one decides
    presentation. A new cosmetic draw must never shift the outcome stream.
 4. **Measure, never assert.** "Fixed" means a number from a harness, and that
@@ -415,6 +426,34 @@ pressure on the carrier**, and both halves of the test must pass:
 Either failure alone condemns the decision layer, and only the split table can
 see either one.
 
+**The bar is a number, stated now.** "Not yet producing varied option sets" is a
+judgement, and judgement is how the predecessor drifted for months, so it is
+written down before there is an engine to argue with. A **cell** is (carrier's
+grid cell) × (pressure: none / closed down / pressed), and a cell counts as
+populated at 200 observed decisions.
+
+| what | bar |
+|---|---|
+| median option-set size, after perception filtering | **≥ 6** |
+| decisions offered ≤ 2 options | **≤ 10%** |
+| between-cell distance, median over populated pairs | **TV ≥ 0.30** |
+| between-cell distance, own-third centre-back unpressured vs final-third winger pressed | **TV ≥ 0.50** |
+| within-cell normalised entropy, median over populated cells | **≤ 0.60** |
+
+TV is total variation distance between the two cells' chosen-option-kind
+distributions — half the sum of the absolute differences in share, so 0 is
+identical and 1 is disjoint. Normalised entropy is Shannon entropy over the
+option kinds divided by the entropy of the uniform distribution over the kinds
+available in that cell, so it does not punish a cell that genuinely has more
+things to do.
+
+These five numbers gate step 5 on step 4 in §6: **the decision layer is not
+tuned until the off-ball layer clears them**, because until it does, every number
+that comes out of the decision layer is a measurement of the wrong thing. If a
+first measurement says a bar is set wrong, moving it is an argument written down
+and signed off — the same standard as re-recording a fingerprint, and for the
+same reason.
+
 The same conditionality applies to whatever produces the variety. The randomness
 in the choice is driven by pressure, by time on the ball and by the player, so it
 is *low* wherever a player is comfortable. Randomness that is high everywhere has
@@ -425,11 +464,20 @@ screen as eleven men who cannot think.
 
 ## 6. Build order
 
-1. **Harness, shim and the two fingerprint gates — before the first match is
+1. **Shim, CI on push, and a gate skeleton — before the first match is
    simulated.** Not after. The gates are what make everything below cheap.
+   **Step 1 is deliberately small, and it does not record a baseline.** There is
+   no engine yet, so there is nothing to hash: the gate skeleton's correct
+   behaviour on day one is to **fail loudly, saying there is no engine to
+   fingerprint**, and CI must go red on that. A gate that reports success against
+   an empty engine is worse than no gate, and a week spent building gate
+   machinery with nothing to gate is the other way this step fails.
 2. Pitch, ball flight, eleven men who move to targets. No decisions yet.
    **And the debug renderer**: top-down, twenty-two dots, the ball, the lane
    lines, a target marker and an arrow per man to where he is trying to be.
+   **The first real baseline is recorded here**, when eleven men are moving and
+   there is a shape worth hashing — and it is recorded by the owner, not by an
+   agent. Until then the gate stays red and that is the correct colour.
 3. The event vocabulary from §4, with a census harness. Every event countable
    before any of them is drawn.
 4. Roles, duties and off-ball movement (§2.2), each with its harness and its two
