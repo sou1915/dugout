@@ -76,6 +76,12 @@ jobs:
       - name: Gate selftest — the readable breakdown
         run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar gate.GateKt --selftest
 
+      # The supervisor's core property: adding randomness must not disturb
+      # what is already there. If this ever fails, the fingerprint stops
+      # meaning what it claims to mean.
+      - name: DrawCheck — adding a draw disturbs nothing
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.DrawCheckKt
+
       # Does a tactical setting move the football? A dead lever prints its own
       # verdict here rather than being discovered months later in a sweep.
       - name: ShapeCheck — line height and block width
