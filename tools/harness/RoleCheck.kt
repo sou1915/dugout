@@ -59,9 +59,32 @@ private const val SLOT = 7
  */
 private val SHIPPED = listOf(
     RoleId.OVERLAPPING_FB,
-    RoleId.TOUCHLINE_WINGER, RoleId.INSIDE_FORWARD,
+    RoleId.INSIDE_FORWARD,
     RoleId.BOX_TO_BOX, RoleId.POACHER
 )
+
+/*
+ * FIVE BECAME FOUR when offside was wired, and this is the SECOND time a
+ * correct change has flattened a pair. That pattern is now the finding.
+ *
+ * TOUCHLINE_WINGER and OVERLAPPING_FB separated at 0.13 positionally, 2.25 m
+ * apart, once attackers started holding the offside line. The reason is
+ * structural: the line is a single x, so any two roles whose difference was
+ * HOW FAR FORWARD THEY PUSH get pinned to the same place the moment something
+ * caps how far forward anyone may push.
+ *
+ * That is not a bug in the offside model, which is right, and it is not a bug
+ * in the floor, which has not moved. It says the roles are thin — three of them
+ * have now been withdrawn because their whole distinctness was a few metres of
+ * forward push, and a few metres is the first thing any correct constraint
+ * takes away. What separates a touchline winger from an overlapping full-back
+ * in football is WHEN he goes and what he does when he arrives, not how far up
+ * he stands. Neither of those exists here yet.
+ *
+ * Withdrawing the claim is still the honest move rather than lowering the bar.
+ * But four of fourteen is now a statement about the role model, and it should
+ * stop being answered by parking one more each time.
+ */
 
 /** Built, playable, and NOT yet proven distinct. Each is an open job. */
 private val PARKED = RoleId.entries.filter { it !in SHIPPED && it != RoleId.GK }

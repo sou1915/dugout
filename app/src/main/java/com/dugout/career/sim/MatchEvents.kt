@@ -96,8 +96,8 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     /** The ball changed hands while that press was live. */
     PRESS_WON(EvGroup.DEFENDING, wired = true),
     GOAL_LINE_CLEARANCE(EvGroup.DEFENDING),
-    OFFSIDE_TRAP_SPRUNG(EvGroup.DEFENDING),
-    OFFSIDE(EvGroup.DEFENDING),
+    OFFSIDE_TRAP_SPRUNG(EvGroup.DEFENDING, wired = true),
+    OFFSIDE(EvGroup.DEFENDING, wired = true),
 
     // ------------------------------------------------------------ goalkeeping
     SAVE_ROUTINE(EvGroup.GOALKEEPING, wired = true),
@@ -127,7 +127,7 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     CORNER_WON(EvGroup.RESTARTS, wired = true),
     CORNER_TAKEN(EvGroup.RESTARTS, wired = true),
     FREE_KICK_DIRECT(EvGroup.RESTARTS, wired = true),
-    FREE_KICK_INDIRECT(EvGroup.RESTARTS),
+    FREE_KICK_INDIRECT(EvGroup.RESTARTS, wired = true),
     PENALTY_AWARDED(EvGroup.RESTARTS, wired = true),
     PENALTY_SCORED(EvGroup.RESTARTS),
     PENALTY_MISSED(EvGroup.RESTARTS),

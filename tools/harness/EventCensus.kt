@@ -122,7 +122,7 @@ fun main(args: Array<String>) {
         Target("take-ons attempted", 30.0, 40.0, value = { null }, wired = { false }),
         Target("fouls", 20.0, 24.0, value = { rate(it, Ev.FOUL) }, wired = { true }),
         Target("yellow cards", 3.0, 4.5, value = { rate(it, Ev.CARD_YELLOW) }, wired = { true }),
-        Target("offsides", 4.0, 6.0, value = { null }, wired = { false })
+        Target("offsides", 4.0, 6.0, value = { rate(it, Ev.OFFSIDE) }, wired = { true })
     )
 
     println()

@@ -66,6 +66,11 @@ class MatchSim(
         /** Metres from the line of a pass within which a defender can read it. */
         const val READS_IT_M = 2.5f
 
+        /** How far beyond the second-last man is actually offside, metres. */
+        const val OFFSIDE_TOLERANCE = 0.4f
+        /** How far short of the line an attacker aims to stay. */
+        const val HOLD_MARGIN = 1.2f
+
         /** A struck ball shorter than this is short. Length is a fact. */
         const val SHORT_PASS_M = 24f
 
@@ -558,6 +563,7 @@ class MatchSim(
         }
 
         markTheLine(m, tx, ty)
+        markOffside(m, chosen.receiver)
         lastStriker = m
         lastKind = chosen.kind
         lastReceiver = chosen.receiver
@@ -602,6 +608,89 @@ class MatchSim(
             if (o.side == striker.side) continue
             val t = (((o.x - ball.x) * dx + (o.y - ball.y) * dy) / len2).coerceIn(0f, 1f)
             inTheLine[i] = Physics.dist(o.x, o.y, ball.x + dx * t, ball.y + dy * t) < READS_IT_M
+        }
+    }
+
+    /**
+     * WAS THE MAN HE PLAYED IT TO BEYOND THE LAST DEFENDER WHEN HE STRUCK IT?
+     *
+     * Offside is the only law in football that is decided at a single INSTANT —
+     * the moment the ball is played, not the moment it arrives — and that is
+     * exactly why it could not be bolted on later. Every other event in this
+     * engine resolves when the ball comes to rest. This one has to be recorded
+     * at the strike and remembered, like the passing line above it.
+     *
+     * The second-last opponent is the line, the halfway line caps it, and a man
+     * level is on. There is no phase-of-play judgement and no interfering-with-
+     * play test, because both need an intent model this engine does not have.
+     * What is here is the geometry, which is most of the law and all of the
+     * part that shapes a defensive line.
+     *
+     * Wiring it does something no counter shows: it makes the block's HEIGHT
+     * cost something. Until now a high line was free — there was no punishment
+     * for stepping up and no reward for playing anyone off. That is a tactical
+     * lever that was inert in both directions.
+     */
+    private fun markOffside(striker: Man, receiver: Man?) {
+        offsideAgainst = null
+        val r = receiver ?: return
+        if (r === striker) return
+
+        val side = striker.side
+        val rAttX = Pitch.attX(side, r.x)
+        // His own half is always onside.
+        if (rAttX <= Pitch.LENGTH * 0.5f) return
+
+        // The second-last opponent, keeper included. First and second deepest
+        // in OUR attacking frame means highest x for them.
+        var last = -Float.MAX_VALUE
+        var second = -Float.MAX_VALUE
+        for (o in men) {
+            if (o.side == side) continue
+            val ax = Pitch.attX(side, o.x)
+            if (ax > last) { second = last; last = ax } else if (ax > second) second = ax
+        }
+        if (second == -Float.MAX_VALUE) return
+
+        // Level is on, so a strict inequality with a boot's worth of tolerance.
+        if (rAttX > second + OFFSIDE_TOLERANCE) {
+            offsideAgainst = r
+            events.fire(Ev.OFFSIDE_TRAP_SPRUNG, 1 - side)
+        }
+    }
+
+    /** Flagged at the strike, given when he touches it. */
+    private var offsideAgainst: Man? = null
+
+    /** The second-last opponent, per side, in that side's attacking frame. */
+    private val offsideLine = FloatArray(2)
+
+    /**
+     * WHERE EACH SIDE MAY RUN TO — recomputed at claim cadence.
+     *
+     * Wiring the law without this produced 35.7 offsides a match against a band
+     * of 4-6, and the number was correct: eleven men were standing wherever
+     * their role anchor put them, six times a match beyond the last defender,
+     * because nothing in the engine had ever heard of the line. A law that only
+     * punishes is half a law. In football it SHAPES the run — a striker holds
+     * his shoulder against the last man and times his move — and that shaping
+     * is most of what the offside rule actually does to a game.
+     *
+     * This is also the first thing that makes a high defensive line COST
+     * something. Until now stepping up was free in both directions: no
+     * punishment for the defenders, no reward for playing anyone off.
+     */
+    private fun updateOffsideLines() {
+        for (side in 0..1) {
+            var last = -Float.MAX_VALUE
+            var second = -Float.MAX_VALUE
+            for (o in men) {
+                if (o.side == side) continue
+                val ax = Pitch.attX(side, o.x)
+                if (ax > last) { second = last; last = ax } else if (ax > second) second = ax
+            }
+            offsideLine[side] =
+                if (second == -Float.MAX_VALUE) Pitch.LENGTH else second
         }
     }
 
@@ -835,6 +924,20 @@ class MatchSim(
      * of what anybody intended: how far it travelled, and whose it is now.
      */
     private fun resolveTouch(m: Man) {
+        offsideAgainst?.let { flagged ->
+            if (m === flagged) {
+                events.fire(Ev.OFFSIDE, m.side)
+                events.fire(Ev.FREE_KICK_INDIRECT, 1 - m.side)
+                settle(worked = false)
+                lastStriker = null
+                lastKind = null
+                lastReceiver = null
+                offsideAgainst = null
+                deadBall(1 - m.side)
+                return
+            }
+        }
+
         val s = lastStriker ?: run {
             // Nobody played this to him. He went and got it — a thing that
             // could not happen in this engine until the ball was allowed to
@@ -1163,6 +1266,28 @@ class MatchSim(
                     .coerceIn(1.5f, Pitch.LENGTH - 1.5f).coerceAtMost(m.maxAttX)
             } else {
                 tAx = (ax + dx).coerceIn(1.5f, Pitch.LENGTH - 1.5f).coerceAtMost(m.maxAttX)
+                /*
+                 * HOLD THE LINE. A man whose side has the ball does not run
+                 * beyond the second-last defender and stand there — he holds
+                 * his shoulder against him. Never past the halfway line, since
+                 * his own half is always onside.
+                 */
+                /*
+                 * ...UNTIL THE BALL IS PLAYED TO HIM. That is the timed run,
+                 * and it is the third piece that makes the other two mean
+                 * anything.
+                 *
+                 * Holding the line alone took completion 52.3% -> 44.3%,
+                 * because a ball into space is aimed nine metres ahead of a man
+                 * who is now forbidden to go there. In football he is onside at
+                 * the instant it is struck and then he goes — which is exactly
+                 * what the law permits and exactly what a through ball IS. The
+                 * engine already knows who was played in.
+                 */
+                if (possessionSide == m.side && m !== lastReceiver) {
+                    val limit = maxOf(Pitch.LENGTH * 0.5f, offsideLine[m.side] - HOLD_MARGIN)
+                    if (tAx > limit) tAx = limit
+                }
             }
             val tAy = (ay + dy).coerceIn(1.5f, Pitch.WIDTH - 1.5f)
             var wantX = Pitch.absX(m.side, tAx)
@@ -1206,6 +1331,7 @@ class MatchSim(
         if (ticks % TeamMind.READ_EVERY == 0) for (t in teams) t.read(this)
 
         if (ticks % CLAIM_EVERY == 0) {
+            updateOffsideLines()
             updateClaim(); updateSupport()
             // A press is decided at claim cadence, because what it aims at is
             // whoever is about to receive the ball.
