@@ -134,7 +134,19 @@ object Decide {
                 OptKind.SWITCH -> 11f
                 else -> 1.5f
             }
-            out.add(Option(kind, t, t.x, t.y, speedFor(d, loft), loft))
+            /*
+             * LEAD THE PASS — re-tested with the overshoot confound removed.
+             *
+             * Aim at where he WILL be: his position plus his velocity over the
+             * flight time. Tested once before and returned nothing, but that
+             * ran while every pass overshot by five metres.
+             */
+            val mps = speedFor(d, loft)
+            val flight = (d / mps).coerceIn(0f, 2.5f)
+            out.add(Option(kind, t,
+                (t.x + t.vx * flight).coerceIn(1f, Pitch.LENGTH - 1f),
+                (t.y + t.vy * flight).coerceIn(1f, Pitch.WIDTH - 1f),
+                mps, loft))
 
             // Into the space ahead of him — a different act with a different risk.
             if (out.size < MAX_OPTIONS && forward > -4f) {
