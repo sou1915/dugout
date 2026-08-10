@@ -1,6 +1,7 @@
 package com.dugout.career.sim
 
 import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -59,11 +60,52 @@ class MatchSim(
         /** Ticks between claim-time recomputations. 3 ticks is 0.3 s. */
         const val CLAIM_EVERY = 3
 
-        /** How far short of his man a ball must die to count as cut out. */
+        /** How near his man a ball must die to count as having reached him. */
         const val INTERCEPT_GAP = 7f
+
+        /** Metres from the line of a pass within which a defender can read it. */
+        const val READS_IT_M = 2.5f
 
         /** A struck ball shorter than this is short. Length is a fact. */
         const val SHORT_PASS_M = 24f
+
+        /** How close an opponent must be for a first touch to be contested. */
+        const val CONTEST_M = 3.0f
+        /**
+         * Chance a dead-heat contest breaks loose.
+         *
+         * Swept, 30 seeds each, nothing else moving:
+         *
+         *   rate  goals  passes  completion  intercept  loose  recoveries
+         *   0.55   1.27   780.4      57.1%      100.6   83.4       325.0
+         *   0.35   1.10   799.0      59.5%      109.8   53.3       308.6
+         *   0.20   1.00   805.2      60.9%      114.7   31.3       292.4
+         *   0.10   0.73   819.7      61.5%      119.9   16.2       282.4
+         *   0.00   0.93   826.6      63.0%      128.3    0.0       267.4
+         *
+         * Completion is monotone and clean; goals trend up but 30 matches at
+         * one a match is thirty goals, so 1.10 and 1.27 are the same number.
+         *
+         * 0.35 SHIPS. The anchor is duel counts — a top-flight match contains
+         * something like 90-110 ground duels, a good share of them 50-50s for a
+         * broken ball — which puts a defensible range somewhere between 50 and
+         * 85 of these, i.e. between 0.35 and 0.55 here. Both ends are arguable,
+         * the goals difference between them is noise, so the tie-break goes to
+         * the end that costs less of the two rows already out of band. That is
+         * a judgement, and it is stated rather than buried: the anchor is the
+         * softest one in this codebase.
+         *
+         * 0.20 would put passes attempted back inside its band at 805. It is
+         * not taken. Choosing a physical constant because it moves an
+         * acceptance row is the exact circularity the brief forbids, and the
+         * row is only one unit outside.
+         */
+        @JvmField var LOOSE_BASE = 0.35f
+        /** Metres of head start that damp that chance by 1/e. */
+        const val LOOSE_SCALE = 1.6f
+        /** How hard a broken ball squirts away. */
+        const val LOOSE_PACE_LO = 3f
+        const val LOOSE_PACE_HI = 9f
 
         const val CROSSBAR_M = 2.44f
 
@@ -169,6 +211,26 @@ class MatchSim(
     private var strikeX = 0f
     private var strikeY = 0f
 
+    /**
+     * WHO WAS STANDING IN THE LINE OF IT WHEN IT WAS STRUCK.
+     *
+     * An interception is a defender reading a pass and taking it. It is not a
+     * defender jogging over to a ball that ran out of steam eight metres short
+     * of anybody — that is a recovery, and real football counts them apart.
+     *
+     * The old test could not tell the difference, because it asked a question
+     * about WHERE THE BALL DIED: "did it stop more than seven metres from the
+     * intended man?". With a mean delivery miss of 8.6 m that is true of about
+     * half of all passes, so roughly half of every turnover was filed as an
+     * interception and the row read 205 a match against a band of 16-22.
+     *
+     * The right question is about the DEFENDER, and it has to be asked at the
+     * moment of the strike, before anyone knows how it ends: was he within
+     * reach of the line the ball was going to travel? That cannot be answered
+     * after the fact, which is why it is recorded here.
+     */
+    private val inTheLine = BooleanArray(22)
+
     private val optionBuf = ArrayList<Option>(Decide.MAX_OPTIONS + 2)
 
     /** Set by a harness to sample the CHOSEN option. Never read by the engine. */
@@ -199,7 +261,16 @@ class MatchSim(
      * does nothing, so every site that ends a possession can say its piece
      * without the sites having to know about each other.
      */
-    private fun settle(worked: Boolean) {
+    /**
+     * @param worked did the striker's intention come off
+     * @param decided did the ball actually end up with SOMEBODY
+     *
+     * The two are not the same question, and conflating them credited a press
+     * with winning balls it had only broken up: a spilled ball answers the
+     * passer's prediction (no, it did not reach him) while deciding nothing at
+     * all about who has it. PRESS_WON read 45 a match on that mistake.
+     */
+    private fun settle(worked: Boolean, decided: Boolean = true) {
         val k = pendingKind ?: return
         pendingKind = null
         onOutcome?.invoke(k, pendingP, worked)
@@ -210,7 +281,7 @@ class MatchSim(
         if (pendingSide in 0..1) {
             val t = teams[pendingSide]
             t.noteChannel(draw, t.channelOf(pendingSide, pendingY), worked)
-            teams[1 - pendingSide].pressResolved(this, worked.not(), clock)
+            if (decided) teams[1 - pendingSide].pressResolved(this, worked.not(), clock)
         }
     }
 
@@ -390,6 +461,7 @@ class MatchSim(
             }
         }
 
+        markTheLine(m, tx, ty)
         lastStriker = m
         lastKind = chosen.kind
         lastReceiver = chosen.receiver
@@ -398,6 +470,27 @@ class MatchSim(
         restartSide = -1
         Physics.strike(ball, tx - ball.x, ty - ball.y, chosen.mps, chosen.loft)
         stillFor = 0f
+    }
+
+    /**
+     * Record which opponents were close enough to the line to read it.
+     *
+     * Point-to-segment distance, the same geometry [laneClear] uses, against
+     * the same threshold a body blocks a shot at. A man beyond it did not
+     * intercept anything; he collected it.
+     */
+    private fun markTheLine(striker: Man, tx: Float, ty: Float) {
+        java.util.Arrays.fill(inTheLine, false)
+        val dx = tx - ball.x
+        val dy = ty - ball.y
+        val len2 = dx * dx + dy * dy
+        if (len2 < 0.01f) return
+        for (i in men.indices) {
+            val o = men[i]
+            if (o.side == striker.side) continue
+            val t = (((o.x - ball.x) * dx + (o.y - ball.y) * dy) / len2).coerceIn(0f, 1f)
+            inTheLine[i] = Physics.dist(o.x, o.y, ball.x + dx * t, ball.y + dy * t) < READS_IT_M
+        }
     }
 
     /** What he MEANT, reported as an event. What happened is resolved later. */
@@ -424,11 +517,102 @@ class MatchSim(
     }
 
     /**
+     * THE BALL CAN BELONG TO NOBODY.
+     *
+     * Everything else in this engine was built on the assumption that it
+     * cannot. A struck ball came to rest, the nearest man had it, and that was
+     * the end of the possession. Which means an incomplete pass was a turnover
+     * by construction — there was no third outcome — and three separate rows
+     * were broken by the same absence:
+     *
+     *   interceptions  224 a match against a 16-22 band
+     *   clearances     retained possession 1.6% of the time, measured
+     *   completion     63% under a press, because a press that got near the
+     *                  ball converted every single time
+     *
+     * So: when a man reaches it with an opponent close enough to contest, the
+     * touch can break. The ball is struck a short way, nobody's name is on it —
+     * `lastStriker` is cleared, so [possessionSide] reads -1, which is a state
+     * the engine already had a value for and had never once been in — and both
+     * sides go after it.
+     *
+     * The tighter the contest, the more likely it breaks. That is the whole
+     * model, and it is deliberately the whole model: a fifty-fifty is a
+     * fifty-fifty because two men arrive together, not because of a table of
+     * strength ratings that do not exist yet.
+     *
+     * Returns true if it broke loose and the possession did NOT resolve.
+     */
+    private fun spilled(m: Man): Boolean {
+        // Who is close enough to make it a contest at all?
+        var rival: Man? = null
+        var rivalGap = Float.MAX_VALUE
+        for (o in men) {
+            if (o.side == m.side) continue
+            val d = Physics.dist(o.x, o.y, ball.x, ball.y)
+            if (d < rivalGap) { rivalGap = d; rival = o }
+        }
+        val r = rival ?: return false
+        if (rivalGap > CONTEST_M) return false
+
+        val mine = Physics.dist(m.x, m.y, ball.x, ball.y)
+        val edge = abs(rivalGap - mine)
+        val pLoose = LOOSE_BASE * exp((-edge / LOOSE_SCALE).toDouble()).toFloat()
+
+        val code = "T$ticks.S${m.side}P${m.slot.id}.CONTEST"
+        if (draw.next(code) > pLoose) return false
+
+        // It breaks. The pass that was in flight did not reach anybody, so the
+        // striker's prediction is answered and the length of it is still a
+        // fact worth counting — an incomplete pass is a pass.
+        val s = lastStriker
+        if (s != null) {
+            val d = Physics.dist(strikeX, strikeY, ball.x, ball.y)
+            val wasPass = lastKind != OptKind.SHOT && lastKind != OptKind.CLEAR &&
+                lastKind != OptKind.CARRY
+            if (wasPass) {
+                events.fire(if (d < SHORT_PASS_M) Ev.PASS_SHORT else Ev.PASS_LONG, s.side)
+                events.fire(Ev.PASS_MISPLACED, s.side)
+            }
+            settle(worked = false, decided = false)
+        }
+
+        events.fire(Ev.LOOSE_BALL, -1)
+        // Away from the two of them, roughly, and not far. A broken ball is a
+        // scramble, not a clearance.
+        val bc = "T$ticks.LOOSE"
+        Physics.strike(
+            ball,
+            draw.range("$bc.X", -1f, 1f), draw.range("$bc.Y", -1f, 1f),
+            draw.range("$bc.PACE", LOOSE_PACE_LO, LOOSE_PACE_HI),
+            draw.range("$bc.LOFT", 0f, 2.5f)
+        )
+        lastStriker = null
+        lastKind = null
+        lastReceiver = null
+        restartSide = -1
+        stillFor = 0f
+        return true
+    }
+
+    /**
      * A man has got to the ball. Report the two facts that are true regardless
      * of what anybody intended: how far it travelled, and whose it is now.
      */
     private fun resolveTouch(m: Man) {
-        val s = lastStriker ?: return
+        val s = lastStriker ?: run {
+            // Nobody played this to him. He went and got it — a thing that
+            // could not happen in this engine until the ball was allowed to
+            // belong to nobody.
+            //
+            // A DEAD BALL IS NOT A LOOSE BALL. Both clear `lastStriker`, so the
+            // first version of this fired on every throw-in, goal kick and
+            // kick-off and read 135 recoveries a match against 87 loose balls —
+            // more recoveries than there were balls to recover, which is the
+            // arithmetic tell that a counter is catching something else.
+            if (restartSide < 0) events.fire(Ev.RECOVERY_RUN, m.side)
+            return
+        }
         val k = lastKind
         val d = Physics.dist(strikeX, strikeY, ball.x, ball.y)
 
@@ -461,10 +645,28 @@ class MatchSim(
             if (d < 2f) deliveryNear++
         }
         if (m.side != s.side) {
+            /*
+             * Three different things, told apart at last.
+             *
+             *   INTERCEPTION  he was in the line when it was struck and he took
+             *                 it. He read the pass.
+             *   RECOVERY_RUN  he was nowhere near it and went and got it. The
+             *                 pass simply failed and he was closest to where it
+             *                 ended up.
+             *   DISPOSSESSED  he took it off the man it reached.
+             */
+            val i = men.indexOf(m)
             val target = lastReceiver
-            val cutOut = target != null &&
-                Physics.dist(ball.x, ball.y, target.x, target.y) > INTERCEPT_GAP
-            events.fire(if (cutOut) Ev.INTERCEPTION else Ev.DISPOSSESSED, m.side)
+            val reachedHim = target != null &&
+                Physics.dist(ball.x, ball.y, target.x, target.y) <= INTERCEPT_GAP
+            events.fire(
+                when {
+                    i >= 0 && inTheLine[i] -> Ev.INTERCEPTION
+                    reachedHim -> Ev.DISPOSSESSED
+                    else -> Ev.RECOVERY_RUN
+                },
+                m.side
+            )
         }
         // A shot is only ever answered at the goal line. Anything else here
         // means it did not go in.
@@ -781,8 +983,11 @@ class MatchSim(
             stillFor += DT
             val c = claimant
             if (c != null && Physics.dist(c.x, c.y, ball.x, ball.y) < 1.4f) {
-                resolveTouch(c)
-                strikeOn(c)
+                // He reaches it — but reaching it is not the same as having it.
+                if (!spilled(c)) {
+                    resolveTouch(c)
+                    strikeOn(c)
+                }
             } else if (stillFor > 6f) {
                 val f = c ?: men[0]
                 resolveTouch(f)
@@ -831,7 +1036,8 @@ class MatchSim(
     }
 
     /*
-     * THE LOOSE BALL — attempted as a 50-50 contest, and it missed.
+     * THE LOOSE BALL — attempted once as a 50-50, reverted, and now built a
+     * second way. THE NOTE BELOW WAS RIGHT BOTH TIMES.
      *
      * A dying ball was given to the man with the lowest claim time, so an
      * incomplete pass was a turnover BY CONSTRUCTION. The attempt made it
@@ -855,6 +1061,26 @@ class MatchSim(
      * completion. Completion is upstream of IT: the ball has to arrive near the
      * man it was aimed at often enough for a contest to involve him. That is
      * delivery error and receiver movement, not the claim rule.
+     *
+     * -------------------------------------------------------------------
+     * SECOND ATTEMPT, DIFFERENT MECHANISM, SAME WALL — and worth reading as a
+     * warning before anyone tries a third.
+     *
+     * This one does not reassign the ball to a coin-flip winner. It lets the
+     * touch BREAK: nobody gets it, `lastStriker` clears, [possessionSide] reads
+     * -1, and both sides chase. That is a better model and it shipped. But
+     * completion went 63.2% -> 57.1%, which is the note above coming true a
+     * second time by a different route.
+     *
+     * The cause is one number: the mean delivery miss is 8.61 m, and only 36%
+     * of intended passes land within two metres of the man. A contest at the
+     * place a ball dies is therefore almost never "the receiver against his
+     * marker" — it is two other people. Nothing done to the contest rule can
+     * fix a pass that was never near anybody.
+     *
+     * So the honest statement of the open job is not "the loose ball" any more.
+     * It is DELIVERY. The overshoot was found and fixed, the error scale was
+     * swept, leading the pass was tested — and 8.61 m survived all three.
      */
     /** How many of [side]'s men sit within [r] of a point. */
     fun matesWithin(x: Float, y: Float, r: Float, side: Int): Int {

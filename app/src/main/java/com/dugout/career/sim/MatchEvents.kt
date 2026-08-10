@@ -34,6 +34,16 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     FLICK_ON(EvGroup.ON_BALL),
     FIRST_TOUCH_GOOD(EvGroup.ON_BALL),
     FIRST_TOUCH_HEAVY(EvGroup.ON_BALL),
+    /**
+     * A contested first touch that belonged to nobody.
+     *
+     * The single largest hole in this engine until now: every struck ball was
+     * claimed, instantly and completely, by whoever was nearest. So an
+     * incomplete pass was a turnover BY CONSTRUCTION, a clearance retained
+     * possession 1.6% of the time, and a press that got near the ball converted
+     * every time. One missing idea, showing up in three broken rows.
+     */
+    LOOSE_BALL(EvGroup.ON_BALL, wired = true),
     DISPOSSESSED(EvGroup.ON_BALL, wired = true),
 
     // ---------------------------------------------------------------- passing
@@ -79,7 +89,8 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     TACKLE_STANDING(EvGroup.DEFENDING),
     TACKLE_SLIDING(EvGroup.DEFENDING),
     TACKLE_LAST_DITCH(EvGroup.DEFENDING),
-    RECOVERY_RUN(EvGroup.DEFENDING),
+    /** A loose ball picked up. Nobody passed it to him; he went and got it. */
+    RECOVERY_RUN(EvGroup.DEFENDING, wired = true),
     /** The team mind committed several men at once. A collective act, not a man's. */
     PRESS_TRIGGERED(EvGroup.DEFENDING, wired = true),
     /** The ball changed hands while that press was live. */

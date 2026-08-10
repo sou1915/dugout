@@ -16,16 +16,13 @@ import gate.Fnv
  * So each layer has a switch, and this harness runs the same fixed seeds with
  * one layer at a time.
  *
- * THE FIRST ROW IS THE IMPORTANT ONE. With all three off, the engine must
- * produce the fingerprint it had BEFORE any of this existed, byte for byte. If
- * it does not, some part of the team mind is doing something when it is
- * switched off, and no other row in this table can be trusted.
+ * THE CONTROL ROW IS THE IMPORTANT ONE, and it is only worth anything if a
+ * switched-off layer is genuinely INERT — drawing nothing, publishing nothing,
+ * biasing nothing. That is gated below, as properties of the switches rather
+ * than as a remembered scoreline.
  *
  *   java -cp build/gate.jar harness.TeamCheckKt [matches]
  */
-
-/** What the fingerprint was on the commit before the team mind existed. */
-private const val BEFORE_RESULT = "8b9bf19a56c2afe3"
 
 private class Roll {
     var goals = 0.0; var shots = 0.0; var passes = 0.0; var completed = 0.0
@@ -107,41 +104,85 @@ fun main(args: Array<String>) {
 
     // ------------------------------------------------------- the real gate here
     println("=".repeat(100))
-    println("DOES SWITCHING IT ALL OFF GIVE BACK THE ENGINE THAT EXISTED BEFORE IT?")
+    println("IS A SWITCHED-OFF LAYER ACTUALLY INERT?")
     println("=".repeat(100))
     println()
 
     /*
-     * This is the one claim in this file that has a right answer.
+     * THIS CHECK USED TO PIN A HISTORICAL CONSTANT, AND THAT WAS A MISTAKE.
      *
-     * With every layer off, the three systems must be perfectly inert: the
-     * disposition returns neutral numbers, the memory returns exactly 1, and
-     * the press never draws. Nothing else in the engine changed in that commit,
-     * so the fingerprint must be the one recorded before it — and it is a full
-     * gate rather than a print, because if a "disabled" system is still doing
-     * something then every other row above was measured under a confound.
+     * The first version asserted that with all three layers off, 200 matches
+     * hash to 8b9bf19a56c2afe3 — the fingerprint from the commit before the
+     * team mind existed. It passed, and the thing it proved was real and worth
+     * proving: a whole new random draw and a whole new family of memory codes
+     * had been added and 200 matches were byte-identical.
      *
-     * It is also the supervisor's promise being cashed for the third time. The
-     * team mind added a new random draw (the press trigger) and a whole new
-     * family of memory codes, and under a sequential Rng that alone would have
-     * changed every match ever played.
+     * But it is not a gate. It is a snapshot with an expiry date. The very next
+     * legitimate change to the engine — the loose ball — made it fail while
+     * nothing it was watching had gone wrong, which is the definition of a
+     * false alarm, and a check that cries wolf is worse than no check because
+     * the next person turns it off.
+     *
+     * What replaces it are properties of the SWITCHES themselves, which no
+     * change to the football can invalidate:
+     *
+     *   ACTS off        the press must draw nothing and fire nothing. Not
+     *                   "fire less" — the code must never appear in the
+     *                   supervisor's census at all.
+     *   DISPOSITION off every number it publishes must sit at its neutral
+     *                   value for the whole ninety minutes.
+     *   MEMORY off      the channel bias must be exactly 1, for every channel,
+     *                   after a match's worth of evidence has accumulated.
+     *
+     * Each of those is a statement about inertness rather than about a
+     * scoreline, and inertness is what the table above depends on.
      */
-    // The recorded number is 200 seeds through the same fields the gate hashes.
-    // Comparing anything else to it is comparing two different measurements,
-    // which is a mistake this harness made on its first run.
-    val control = run(gate.EngineRegistry.MATCHES, false, false, false).second
-    val same = control == BEFORE_RESULT
-    println("  with all three off   $control   (${gate.EngineRegistry.MATCHES} seeds)")
-    println("  before the team mind $BEFORE_RESULT   (${gate.EngineRegistry.MATCHES} seeds)")
+    var bad = 0
+
+    TeamMind.DISPOSITION = false; TeamMind.MEMORY = false; TeamMind.ACTS = false
+    var pressCodes = 0
+    var pressEvents = 0
+    var dispositionMoved = 0
+    var biasMoved = 0
+    for (i in 0 until 8) {
+        val sim = MatchSim(1000L + i)
+        sim.play { _, _ ->
+            for (t in sim.teams) {
+                if (t.directness != 1f || t.caution != 1f ||
+                    t.lineShift != 0f || t.aggression != 0.5f) dispositionMoved++
+                if (t.pressLive) pressEvents++
+            }
+        }
+        pressCodes += sim.draw.census().keys.count { it.contains(".TEAM.PRESS") }
+        pressEvents += sim.events[Ev.PRESS_TRIGGERED]
+        for (t in sim.teams) for (ch in 0..2)
+            if (t.channelBias(sim.draw, ch) != 1f) biasMoved++
+    }
+    TeamMind.allOn()
+
+    fun claim(label: String, n: Int) {
+        val ok = n == 0
+        if (!ok) bad++
+        println(String.format("  %-58s %s", label, if (ok) "inert" else "STILL ACTIVE ($n)"))
+    }
+    claim("ACTS off: press codes ever drawn", pressCodes)
+    claim("ACTS off: press events ever fired / men ever committed", pressEvents)
+    claim("DISPOSITION off: samples where a published number was not neutral", dispositionMoved)
+    claim("MEMORY off: channels whose bias was not exactly 1", biasMoved)
     println()
-    if (!same) {
+    println("  all three off, $matches seeds:  $offFp")
+    println("  Printed, not compared. It moves whenever the football legitimately")
+    println("  moves, so an expected value for it would need re-recording on every")
+    println("  commit — which is what the fingerprint gate is already for.")
+    println()
+    if (bad > 0) {
         println("  VERDICT: A SWITCHED-OFF LAYER IS STILL DOING SOMETHING.")
         println("  Nothing else in this table can be read until that is true.")
         println("=".repeat(100))
         System.exit(1)
     }
-    println("  VERDICT: identical. The three layers are genuinely separable, and each")
-    println("           row above is one system measured on its own.")
+    println("  VERDICT: all three are genuinely inert when off, so each row above")
+    println("           is one system measured on its own.")
     println("=".repeat(100))
 
     // ------------------------------------------------- what the press actually did
