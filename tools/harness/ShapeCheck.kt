@@ -36,6 +36,7 @@ private class Row(val label: String) {
     val meanX = Acc()
     val gap = Acc()
     val arrive = Acc()
+    val goalSide = Acc()
     val band = Array(Pitch.BANDS) { Acc() }
     val lane = Array(Pitch.LANES) { Acc() }
 }
@@ -52,12 +53,14 @@ private fun run(label: String, lineHeight: Float, width: Float, matches: Int): R
     for (i in 0 until matches) {
         val sim = MatchSim(1000L + i, homeShape = shape)
         var depth = 0.0; var mx = 0.0; var gap = 0.0; var n = 0
+        val gs = Acc()
         val bandC = DoubleArray(Pitch.BANDS)
         val laneC = DoubleArray(Pitch.LANES)
 
         sim.play { _, _ ->
             sim.sample(snap)
             depth += snap.blockDepth[0]
+            if (snap.goalSideValid[0]) gs.add(snap.goalSide[0].toDouble())
             for (j in 0 until Pitch.LANES) for (b in 0 until Pitch.BANDS) {
                 val v = snap.occupancy[0][j * Pitch.BANDS + b]
                 bandC[b] += v
@@ -80,6 +83,7 @@ private fun run(label: String, lineHeight: Float, width: Float, matches: Int): R
         row.depth.add(depth / n)
         row.meanX.add(mx / n)
         row.gap.add(gap / n)
+        if (gs.mean > 0.0 || true) row.goalSide.add(gs.mean)
         if (sim.arriveGapCount > 0)
             row.arrive.add(sim.arriveGapSum / sim.arriveGapCount)
         for (b in 0 until Pitch.BANDS) row.band[b].add(bandC[b] / n)
@@ -90,7 +94,7 @@ private fun run(label: String, lineHeight: Float, width: Float, matches: Int): R
 
 private fun header() {
     println(String.format("%-22s %14s %14s %12s %14s",
-        "row", "block depth m", "mean own-x m", "gap to tgt m", "gap on arrival"))
+        "row", "block depth m", "mean own-x m", "gap to tgt m", "goal-side/10"))
     println("-".repeat(82))
 }
 
@@ -98,7 +102,7 @@ private fun print(r: Row) {
     println(String.format(
         "%-22s %8.2f±%-5.2f %8.2f±%-5.2f %7.2f±%-4.2f %9.2f±%-4.2f",
         r.label, r.depth.mean, r.depth.se, r.meanX.mean, r.meanX.se,
-        r.gap.mean, r.gap.se, r.arrive.mean, r.arrive.se
+        r.gap.mean, r.gap.se, r.goalSide.mean, r.goalSide.se
     ))
 }
 

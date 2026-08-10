@@ -592,7 +592,15 @@ class MatchSim(
             var lo = Float.MAX_VALUE
             var hi = -Float.MAX_VALUE
             var goalSide = 0
-            val inOwnBox = Pitch.inOwnBox(side, ball.x, ball.y)
+            /*
+             * "Defenders goal-side of a ball in their own box" means a ball THEY
+             * DO NOT HAVE. The first version counted any ball in the box,
+             * including their own keeper building out — a situation where having
+             * men ahead of the ball is correct football, and which dragged the
+             * average toward zero however well the side defended. The corrected
+             * number is worse, not better: 0.00 of 10.
+             */
+            val inOwnBox = Pitch.inOwnBox(side, ball.x, ball.y) && possessionSide != side
             val ballAx = Pitch.attX(side, ball.x)
 
             for (m in men) {
