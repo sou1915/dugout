@@ -59,6 +59,9 @@ class MatchSim(
         /** Ticks between claim-time recomputations. 3 ticks is 0.3 s. */
         const val CLAIM_EVERY = 3
 
+        /** How far short of his man a ball must die to count as cut out. */
+        const val INTERCEPT_GAP = 7f
+
         /** A struck ball shorter than this is short. Length is a fact. */
         const val SHORT_PASS_M = 24f
 
@@ -131,6 +134,7 @@ class MatchSim(
     /** Who struck it last, and from where — the two facts a touch resolves against. */
     private var lastStriker: Man? = null
     private var lastKind: OptKind? = null
+    private var lastReceiver: Man? = null
     private var strikeX = 0f
     private var strikeY = 0f
 
@@ -271,6 +275,7 @@ class MatchSim(
 
         lastStriker = m
         lastKind = chosen.kind
+        lastReceiver = chosen.receiver
         strikeX = ball.x
         strikeY = ball.y
         restartSide = -1
@@ -318,9 +323,29 @@ class MatchSim(
             if (m.side == s.side) events.fire(Ev.PASS_COMPLETED, s.side)
             else events.fire(Ev.PASS_MISPLACED, s.side)
         }
-        if (m.side != s.side) events.fire(Ev.INTERCEPTION, m.side)
+        /*
+         * AN INTERCEPTION IS A PASS CUT OUT, NOT EVERY CHANGE OF HANDS.
+         *
+         * This fired on every turnover and read 401.9 a match against a §5
+         * target of 16-22 — the same shape of error as the save counter. A
+         * defender reading a pass and taking it BEFORE it reaches the intended
+         * man is an interception; scrapping for a ball that has already arrived
+         * and gone loose is a recovery, and real football counts them apart.
+         *
+         * The rest are loose balls, which this engine has never modelled: every
+         * struck ball is claimed the instant it stops, so an incomplete pass is
+         * a turnover by construction. Naming them is the first step to fixing
+         * that.
+         */
+        if (m.side != s.side) {
+            val target = lastReceiver
+            val cutOut = target != null &&
+                Physics.dist(ball.x, ball.y, target.x, target.y) > INTERCEPT_GAP
+            events.fire(if (cutOut) Ev.INTERCEPTION else Ev.DISPOSSESSED, m.side)
+        }
         lastStriker = null
         lastKind = null
+        lastReceiver = null
     }
 
     /**

@@ -34,7 +34,7 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     FLICK_ON(EvGroup.ON_BALL),
     FIRST_TOUCH_GOOD(EvGroup.ON_BALL),
     FIRST_TOUCH_HEAVY(EvGroup.ON_BALL),
-    DISPOSSESSED(EvGroup.ON_BALL),
+    DISPOSSESSED(EvGroup.ON_BALL, wired = true),
 
     // ---------------------------------------------------------------- passing
     /** A struck ball that travelled under 24 m. Length is a fact; intent is not. */
