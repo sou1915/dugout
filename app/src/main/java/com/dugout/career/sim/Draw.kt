@@ -60,6 +60,25 @@ class Draw(private val seed: Long) {
 
     fun range(code: String, lo: Float, hi: Float): Float = lo + (hi - lo) * next(code)
 
+    /**
+     * RECORD THAT SOMETHING HAPPENED, without drawing a value.
+     *
+     * This is what turns the supervisor from a generator into a MEMORY, and it
+     * is what a mind reads to know it has played this same ball six times
+     * already. The counter is the same one [next] uses for occurrences, so the
+     * census shows decisions and draws side by side — but a memory code carries
+     * `.DID.` and is never passed to [next], so the two can never collide and
+     * bump each other's values.
+     *
+     * It is safe for the fingerprint for exactly the reason the whole supervisor
+     * exists: occurrences are counted PER CODE. Noting a new fact under a new
+     * code cannot move a single value drawn under any other code.
+     */
+    fun note(code: String) { used.merge(code, 1, Int::plus) }
+
+    /** How many times this code has fired. A mind's memory of its own match. */
+    fun count(code: String): Int = used[code] ?: 0
+
     /** Pin a code, so a change elsewhere can be measured against a fixed draw. */
     fun freeze(code: String, v: Float) { frozen[code] = v }
     fun unfreeze(code: String) { frozen.remove(code) }

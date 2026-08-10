@@ -82,6 +82,14 @@ jobs:
       - name: DrawCheck — adding a draw disturbs nothing
         run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.DrawCheckKt
 
+      # Every man prices his options as percentages. Two things about that are
+      # gated, because both have a right answer that owes nothing to taste: the
+      # same seed replays decision for decision, and no single act eats a man's
+      # whole match. The calibration table is PRINTED — several prices are known
+      # to be wrong and are deliberately left wrong, and Mind.kt says why.
+      - name: MindCheck — the percentages, the memory, the replay
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.MindCheckKt 30
+
       # Does a tactical setting move the football? A dead lever prints its own
       # verdict here rather than being discovered months later in a sweep.
       - name: ShapeCheck — line height and block width

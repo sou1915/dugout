@@ -40,9 +40,25 @@ private const val SLOT = 7
  * So the gate tests what is claimed. The parked roles below still exist and
  * still play; what is withdrawn is the claim that they are distinguishable, and
  * the count is printed every run so it cannot quietly become permanent.
+ *
+ * SIX BECAME FIVE when the decision layer moved into [Mind], and the reason is
+ * worth keeping because it is not the reason it looks like.
+ *
+ * INVERTED_FB and INSIDE_FORWARD were separated at 0.12 POSITIONALLY — already
+ * under the 0.15 floor — before any of this. They stood 1.5 m apart and always
+ * had. What was carrying the pair was the second signature: they chose visibly
+ * different acts. A man who ranks his options and takes his best takes the act
+ * his POSITION dictates, so two men in the same position converged on the same
+ * acts and the mask came off (act separation 0.08).
+ *
+ * The change did not break the pair. It stopped a thin claim from hiding, and
+ * the claim is withdrawn rather than the floor lowered. Proving it needs an
+ * inverted full-back who actually inverts — a lane change in possession that
+ * puts him somewhere an inside forward is not — which is role work, not a
+ * number in this file.
  */
 private val SHIPPED = listOf(
-    RoleId.INVERTED_FB, RoleId.OVERLAPPING_FB,
+    RoleId.OVERLAPPING_FB,
     RoleId.TOUCHLINE_WINGER, RoleId.INSIDE_FORWARD,
     RoleId.BOX_TO_BOX, RoleId.POACHER
 )

@@ -162,6 +162,36 @@ class MatchSim(
     /** Set by a harness to sample the CHOSEN option. Never read by the engine. */
     @JvmField var onChoice: ((Man, Option, Int, Float) -> Unit)? = null
 
+    /** The whole priced table, for anything that wants to show his thinking. */
+    @JvmField var onAppraisal: ((Man, ArrayList<Option>, Option) -> Unit)? = null
+
+    /**
+     * WHAT HE PREDICTED, AND WHAT HAPPENED — (kind, his percentage, did it work).
+     *
+     * This is the only thing that stops [Mind.pSuccess] being decoration. A
+     * player announcing "78%" is worth nothing until 78% of those come off, and
+     * the predecessor is full of numbers between 0 and 1 that were never once
+     * held against an outcome. `MindCheck` buckets these and prints predicted
+     * against actual.
+     */
+    @JvmField var onOutcome: ((OptKind, Float, Boolean) -> Unit)? = null
+
+    /** What the man on the ball last committed to, still waiting on an answer. */
+    private var pendingKind: OptKind? = null
+    private var pendingP = 0f
+    private var pendingSide = -1
+
+    /**
+     * Resolve the open prediction, once. A second call before another strike
+     * does nothing, so every site that ends a possession can say its piece
+     * without the sites having to know about each other.
+     */
+    private fun settle(worked: Boolean) {
+        val k = pendingKind ?: return
+        pendingKind = null
+        onOutcome?.invoke(k, pendingP, worked)
+    }
+
     /** A dead ball belongs to one side until it is put back in play. */
     private var restartSide = -1
     private var cornerPending = false
@@ -234,6 +264,7 @@ class MatchSim(
 
     /** Park the ball for [side] to put back in play. */
     private fun deadBall(side: Int) {
+        settle(pendingKind != OptKind.SHOT && side == pendingSide)
         restartSide = side
         lastStriker = null
         stillFor = 0f
@@ -268,12 +299,19 @@ class MatchSim(
                 Pitch.absX(m.side, ax), Pitch.WIDTH * 0.5f, 24f, 20f))
         }
 
-        Decide.score(this, m, optionBuf)
-        val chosen = Decide.choose(
-            optionBuf, Decide.temperature(pressure),
-            draw.next("T$ticks.S${m.side}P${m.slot.id}.CHOOSE")
-        )
+        // The engine does not score anything. It hands him what is available
+        // and he answers — with his own percentages and his own memory of what
+        // he has already tried in this match.
+        val chosen = m.mind.decide(this, optionBuf, pressure, draw)
         onChoice?.invoke(m, chosen, optionBuf.size, pressure)
+        onAppraisal?.invoke(m, optionBuf, chosen)
+
+        // He has committed. What he thinks will happen is now on the record and
+        // waiting to be contradicted.
+        settle(false)                       // anything still open never resolved
+        pendingKind = chosen.kind
+        pendingP = chosen.pSuccess
+        pendingSide = m.side
 
         fireIntent(m, chosen)
 
@@ -311,6 +349,7 @@ class MatchSim(
             val blocker = nearestOnLine(m, chosen.tx, chosen.ty)
             if (blocker != null) {
                 events.fire(Ev.SHOT_BLOCKED, blocker.side)
+                settle(false)
                 ball.place(blocker.x, blocker.y)
                 val bc = "T$ticks.S${blocker.side}P${blocker.slot.id}.BLOCK"
                 Physics.strike(
@@ -404,6 +443,10 @@ class MatchSim(
                 Physics.dist(ball.x, ball.y, target.x, target.y) > INTERCEPT_GAP
             events.fire(if (cutOut) Ev.INTERCEPTION else Ev.DISPOSSESSED, m.side)
         }
+        // A shot is only ever answered at the goal line. Anything else here
+        // means it did not go in.
+        settle(k != OptKind.SHOT && m.side == s.side)
+
         lastStriker = null
         lastKind = null
         lastReceiver = null
@@ -456,12 +499,14 @@ class MatchSim(
                         else if (across < 1.3f) Ev.SAVE_ROUTINE else Ev.SAVE_DIVING,
                         defender
                     )
+                    settle(false)
                     val gx = if (defender == 0) 7f else Pitch.LENGTH - 7f
                     ball.place(gx, ball.y.coerceIn(6f, Pitch.WIDTH - 6f))
                     deadBall(defender)
                     return true
                 }
                 events.fire(Ev.GOAL, scorer)
+                settle(pendingKind == OptKind.SHOT)
                 goals[scorer]++
                 resetPositions()
                 kickOff(defender)

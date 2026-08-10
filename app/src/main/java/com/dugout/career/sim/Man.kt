@@ -27,6 +27,16 @@ class Man(
     @JvmField var targetY = 0f
     @JvmField var deadline = 1f
 
+    /**
+     * HIS MIND. One per man, alive for the whole match.
+     *
+     * Everything he decides goes through here — what his options are worth as
+     * percentages, what he has already tried too often, and which one he takes.
+     * The engine never scores an option itself; it hands the man his options and
+     * he answers. See [Mind].
+     */
+    @JvmField val mind = Mind(this)
+
     /** Resolved once, not looked up per tick. */
     @JvmField val role: Role = Roles[slot.role]
     private val duty: DutyMod = Roles.mod(slot.duty)

@@ -1,7 +1,6 @@
 package com.dugout.career.sim
 
 import kotlin.math.abs
-import kotlin.math.exp
 import kotlin.math.hypot
 import kotlin.math.ln
 
@@ -32,6 +31,25 @@ class Option(
     @JvmField var conformance = 1f
 
     /**
+     * HIS OWN ESTIMATE THAT THIS WORKS, 0..1.
+     *
+     * Success is defined per act, not in general: a pass succeeds when the man
+     * he aimed at takes it, a carry succeeds when he still has it twelve metres
+     * later, a shot succeeds when it goes in. A single "success" number across
+     * kinds would be meaningless, and a percentage nobody can check is worse
+     * than no percentage — so [MindCheck] measures every one of these against
+     * what actually happened, bucketed.
+     *
+     * It was a local variable called `pFail` buried inside the scorer before.
+     * Making it a field is the difference between a model and a hunch: what is
+     * a field can be printed, drawn on a frame, and calibrated.
+     */
+    @JvmField var pSuccess = 0f
+
+    /** How many times he has already done this exact thing in this match. */
+    @JvmField var repeats = 0
+
+    /**
      * Expected value, SIGNED, with no role weighting in it.
      *
      * The first version was `(reward - risk) * conformance`, and it was
@@ -43,7 +61,7 @@ class Option(
      * indistinguishable on both signatures at once.
      *
      * Conformance belongs on the CHOICE, not on the score — a prior multiplies
-     * a probability, not a utility. It is applied in [Decide.choose].
+     * a probability, not a utility. It is applied in [Mind.pick].
      */
     val utility: Float get() = reward - risk
 }
@@ -61,12 +79,13 @@ class Option(
  *      sum of distances and never from the engine's own play (see Value.kt);
  *   3. perception REMOVES options rather than penalising them — a man who
  *      cannot see the switch does something else, he is not "worse at" it;
- *   4. the choice is a softmax over utility with a decisiveness temperature,
- *      so a maximiser is the T -> 0 limit and T is never 0.
+ *   4. the choice is made by the man himself, in [Mind], by ranking the
+ *      options on expected value and taking his best with a little randomness
+ *      — a pure maximiser is the zero-randomness limit and it is never zero.
  *
- * And the blunt caveat, because it is the thing that actually matters: softmax
- * cannot rescue a degenerate model. If one option dominates every possession, a
- * temperature just adds noise around the same choice. Variety in what is chosen
+ * And the blunt caveat, because it is the thing that actually matters: no
+ * chooser can rescue a degenerate model. If one option dominates every
+ * possession, randomness just adds noise around the same choice. Variety in what is chosen
  * is downstream of the option set, which is downstream of off-ball movement —
  * which is why roles were built first, and why `OptionCensus` reports the set
  * size next to the choice distribution.
@@ -271,110 +290,24 @@ object Decide {
     private fun speedFor(d: Float, loft: Float): Float =
         (d * Physics.ROLL_DRAG + 2.5f + loft * 0.35f).coerceIn(6f, 30f)
 
-    /** Score every option on axes that are kept separate until the last moment. */
-    fun score(sim: MatchSim, carrier: Man, options: ArrayList<Option>) {
-        val side = carrier.side
-        val here = Value.possessionValue(Pitch.attX(side, carrier.x), carrier.y)
-
-        for (o in options) {
-            val tAttX = Pitch.attX(side, o.tx)
-            val d = Physics.dist(carrier.x, carrier.y, o.tx, o.ty)
-
-            // --- how likely it fails, first: reward depends on it
-            var pFail = when (o.kind) {
-                OptKind.SHOT -> 0f
-                // A hoof goes to NOBODY. The first version had this at 0.35,
-                // which told the model a clearance keeps the ball two times in
-                // three. Whether a team-mate is near where it lands is the
-                // whole question.
-                OptKind.CLEAR ->
-                    if (sim.matesWithin(o.tx, o.ty, 12f, side) > 0) 0.55f else 0.85f
-                OptKind.CARRY -> 0.18f + sim.opponentsWithin(o.tx, o.ty, 6f) * 0.09f
-                else -> 0.06f + d * 0.006f + sim.opponentsNearLine(carrier, o.tx, o.ty) * 0.14f
-            }
-            if (o.kind == OptKind.THROUGH_BALL) pFail += 0.16f
-            if (o.kind == OptKind.CROSS) pFail += 0.20f
-            pFail = pFail.coerceIn(0f, 0.95f)
-
-            /*
-             * EXPECTED VALUE, not "value there minus a penalty".
-             *
-             * The first version scored reward as V(target) - V(here) and
-             * subtracted a risk term for where the ball would be lost. That
-             * ignores the thing that makes losing it expensive: you had the
-             * ball and now you do not. Because turnover cost at the far end of
-             * the pitch is tiny, a hoof upfield came out nearly free, and
-             * OptionCensus duly reported CLEAR as the most chosen act in both
-             * the middle and the final third — men hoofing it from the edge of
-             * the opposition box.
-             *
-             * The honest form keeps the possession you forfeit inside the sum:
-             *
-             *     EV = (1 - pFail) * V(target)  -  V(here)  -  pFail * cost
-             */
-            o.reward = if (o.kind == OptKind.SHOT) {
-                /*
-                 * A shot prices in the bodies in the way.
-                 *
-                 * Without this a shot was generated whenever a man was past
-                 * 62 m and scored on the anchored surface as though the goal
-                 * were empty, which produced seventy saves a match against a
-                 * real seven or eight. A defender standing in the line is the
-                 * single largest term in whether a shot is worth taking.
-                 */
-                val blockers = sim.opponentsNearLine(carrier, o.tx, o.ty)
-                val through = 1f / (1f + 1.35f * blockers)
-                Value.shotValue(Pitch.attX(side, carrier.x), carrier.y) * through - here
-            } else {
-                (1f - pFail) * Value.possessionValue(tAttX, o.ty) - here
-            }
-            o.risk = pFail * Value.turnoverCost(tAttX, o.ty) * RISK_WEIGHT
-
-            // --- conformance: the ONLY channel by which tactics enter
-            o.conformance = carrier.role.intentFor(o.kind)
-        }
-    }
-
-    private const val RISK_WEIGHT = 1.6f
-
-    /**
-     * Choose among them — never maximise.
+    /*
+     * SCORING AND CHOOSING USED TO LIVE HERE. THEY LIVE IN A MAN NOW.
      *
-     * P(i) proportional to exp(u_i / T). A maximiser is T -> 0 and T is never 0;
-     * a composed man with time on the ball runs cold and close to optimal, and
-     * a man with someone in his ear runs hot and is genuinely erratic. That is
-     * one mechanism doing the work three systems used to do badly.
+     * `score` and `choose` were static functions on this object, which meant
+     * every player in the league shared one scorer and one chooser and could
+     * carry nothing of his own between possessions. That is why nothing could
+     * remember anything: there was no object per man to remember it in.
+     *
+     * They are now [Mind], one per player, holding his own percentages and his
+     * own memory of the match. This object keeps the part that is genuinely
+     * shared — what options EXIST from a position on the pitch, which is
+     * geometry and the same for everybody.
+     *
+     * The old softmax-with-a-temperature chooser is deleted rather than left
+     * beside the new one. A second decision path that nothing calls is exactly
+     * the dead code this project keeps finding in its predecessor; the argument
+     * for why ranking replaced it is in [Mind.pick].
      */
-    fun choose(options: ArrayList<Option>, temperature: Float, roll: Float): Option {
-        if (options.size == 1) return options[0]
-        var best = -Float.MAX_VALUE
-        for (o in options) if (o.utility > best) best = o.utility
-
-        var sum = 0.0
-        val w = DoubleArray(options.size)
-        for (i in options.indices) {
-            // The role's prior multiplies the WEIGHT, which is what a
-            // multiplicative prior means. It cannot flip a sign, and a role
-            // that doubles an intent doubles how often he attempts it.
-            val e = options[i].conformance *
-                exp(((options[i].utility - best) / temperature).toDouble())
-            w[i] = e
-            sum += e
-        }
-        var r = roll.toDouble() * sum
-        for (i in options.indices) {
-            r -= w[i]
-            if (r <= 0) return options[i]
-        }
-        return options[options.size - 1]
-    }
-
-    /**
-     * How decisive he is right now. Pressure and time on the ball, for as long
-     * as there are no attributes; composure and decisions belong here next.
-     */
-    fun temperature(pressure: Float): Float =
-        (0.055f - 0.0035f * pressure.coerceIn(0f, 12f)).coerceAtLeast(0.012f)
 
     /** Shannon entropy of a distribution, normalised by the uniform. */
     fun normalisedEntropy(counts: IntArray): Double {
