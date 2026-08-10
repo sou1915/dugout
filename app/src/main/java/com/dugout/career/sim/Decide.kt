@@ -180,6 +180,27 @@ object Decide {
          * quietly becomes a vote on kinds and the chooser is measuring the
          * generator instead of the football.
          */
+        /*
+         * DO NOT GATE AN OPTION ON THE SAME PREDICATE THAT RESOLVES IT.
+         *
+         * Attempted and reverted. Blocks run at 61% of shots against a real
+         * 30%, and penalising the shot's reward does not fix it — with
+         * 1/(1+1.35b) a blocked shot still beats the alternatives, because
+         * almost every option has negative expected value once the possession
+         * you forfeit is subtracted.
+         *
+         * So the shot was gated on `nearestOnLine == null` — perception
+         * removing the option, per §2.8. But that is the SAME test the block
+         * uses, evaluated on the same tick, so a shot could only be generated
+         * when it was impossible to block. EventCensus said so in one line:
+         * NEVER FIRES: SHOT_BLOCKED. And the rest collapsed with it —
+         * shots 27.25 -> 8.95, goals 1.35 -> 0.85, corners 1.90 -> 0.00.
+         *
+         * The shooter must judge the lane IMPERFECTLY: a gate looser than the
+         * block test, so he shoots through half-gaps and is sometimes wrong.
+         * Same shape of error as the rulers earlier in this session — a check
+         * that cannot disagree with what it is checking measures nothing.
+         */
         // Shot, when there is a goal to shoot at.
         if (myAttX > 62f && out.size < MAX_OPTIONS) {
             val gx = Pitch.absX(side, Pitch.LENGTH - 0.5f)
