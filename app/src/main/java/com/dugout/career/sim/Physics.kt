@@ -112,6 +112,95 @@ object Physics {
      *
      * Writes x, y, seconds into [out].
      */
+    /**
+     * WHAT SPEED STOPS A BALL AT [d] METRES, GIVEN A LOFT — solved, not guessed.
+     *
+     * This replaces `d * ROLL_DRAG + 2.5 + loft * 0.35`, which was itself a
+     * correction of an earlier guess and was wrong in a way nobody could see
+     * from reading it. Probed directly, striking a ball and watching where it
+     * came to rest:
+     *
+     *   aimed  loft   speed   stopped   error
+     *      20   0.0   14.90     22.17   +2.17
+     *      20  11.0   18.75     26.17   +6.17     a switch
+     *      20  14.0   19.80     32.73  +12.73     a cross
+     *      30  14.0   26.00     49.48  +19.48
+     *      20  20.0   21.90     47.75  +27.75     a clearance
+     *      30  20.0   28.10     73.23  +43.23
+     *
+     * The `+ loft * 0.35` had the SIGN OF THE WORLD WRONG. A lofted ball spends
+     * its journey in the air, where the drag is a fraction of the rolling drag,
+     * so it needs LESS pace to cover a distance and not more. Every cross,
+     * every switch and every clearance in this engine has been struck as if the
+     * air were made of grass.
+     *
+     * That is where the 7.13 m of "ball vs where it was aimed" comes from, and
+     * with it three things that looked like separate problems: a clearance that
+     * retained possession 1.6% of the time because it flew forty metres past
+     * anybody, a cross that found a team-mate 14% of the time, and a delivery
+     * miss that survived three attempts to fix it at the arrival end.
+     *
+     * There is no closed form for this — a bounce has none — so it is SOLVED by
+     * bisection against [restPoint], the same simulation the engine uses to
+     * decide where men should run. Built once into a grid and interpolated, so
+     * the cost is a few hundred short simulations at class load and two lookups
+     * per option after that. A number derived from the physics cannot drift
+     * away from the physics, which is the whole reason not to fit a curve.
+     */
+    fun solveStrike(d: Float, loft: Float): Float {
+        val dd = ((d - D_LO) / D_STEP).coerceIn(0f, (D_N - 1).toFloat())
+        val ll = ((loft - L_LO) / L_STEP).coerceIn(0f, (L_N - 1).toFloat())
+        val di = dd.toInt().coerceAtMost(D_N - 2)
+        val li = ll.toInt().coerceAtMost(L_N - 2)
+        val fd = dd - di
+        val fl = ll - li
+        val a = grid[li][di] + (grid[li][di + 1] - grid[li][di]) * fd
+        val b = grid[li + 1][di] + (grid[li + 1][di + 1] - grid[li + 1][di]) * fd
+        return (a + (b - a) * fl).coerceIn(SOLVE_LO, SOLVE_HI)
+    }
+
+    private const val D_LO = 2f
+    private const val D_STEP = 1f
+    private const val D_N = 61          // 2 m .. 62 m
+    private const val L_LO = 0f
+    private const val L_STEP = 1f
+    private const val L_N = 25          // loft 0 .. 24
+    /** The engine's tick. MatchSim.DT, repeated here so Physics owns no import. */
+    private const val SOLVE_DT = 0.1f
+    private const val SOLVE_LO = 4f
+    private const val SOLVE_HI = 32f
+
+    /** [loft][distance] -> the pace that stops it there. */
+    private val grid: Array<FloatArray> = Array(L_N) { li ->
+        val loft = L_LO + li * L_STEP
+        FloatArray(D_N) { di -> bisect(D_LO + di * D_STEP, loft) }
+    }
+
+    /**
+     * Bisect with the SAME INTEGRATOR THE MATCH USES.
+     *
+     * The first version solved against [restPoint], which steps at 0.05 s
+     * because it is answering a different question. The match steps at 0.1 s,
+     * and with exponential drag a coarser step keeps more speed — so a solution
+     * calibrated on the fine integrator systematically overshot in the engine,
+     * by up to sixteen metres on a lofted ball. A solver that does not run the
+     * physics it is solving is fitting a curve again with extra steps.
+     */
+    private fun bisect(d: Float, loft: Float): Float {
+        val probe = Ball()
+        var lo = SOLVE_LO
+        var hi = SOLVE_HI
+        repeat(22) {
+            val mid = (lo + hi) * 0.5f
+            probe.place(0f, 0f)
+            strike(probe, 1f, 0f, mid, loft)
+            var steps = 0
+            while (stepBall(probe, SOLVE_DT) && steps++ < 400) { /* fly */ }
+            if (probe.x < d) lo = mid else hi = mid
+        }
+        return (lo + hi) * 0.5f
+    }
+
     fun restPoint(b: Ball, out: FloatArray) {
         var x = b.x; var y = b.y
         var vx = b.vx; var vy = b.vy; var vz = b.vz; var h = b.height

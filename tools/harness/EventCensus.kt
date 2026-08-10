@@ -49,11 +49,13 @@ fun main(args: Array<String>) {
     for (e in Ev.ALL) stats[e] = Stat()
 
     var dSum = 0.0; var dCount = 0L; var dNear = 0L
+    var bva = 0.0; var avm = 0.0; var split = 0L
     for (i in 0 until matches) {
         val sim = MatchSim(1000L + i)
         sim.play()
         for (e in Ev.ALL) stats.getValue(e).add(sim.events[e].toDouble())
         dSum += sim.deliverySum; dCount += sim.deliveryCount; dNear += sim.deliveryNear
+        bva += sim.ballVsAimSum; avm += sim.aimVsManSum; split += sim.splitCount
     }
 
     println("=".repeat(78))
@@ -158,9 +160,18 @@ fun main(args: Array<String>) {
     if (dCount > 0) {
         println(String.format("  mean miss %.2f m over %d intended passes", dSum / dCount, dCount))
         println(String.format("  within 2 m of him: %.1f%%", 100.0 * dNear / dCount))
-        println("  This decides whether the passing problem is DELIVERY ERROR or")
-        println("  RECEIVER MOVEMENT. A small miss with low completion means the man")
-        println("  moved away; a large miss means the strike was wrong.")
+        println()
+        println("  AND THE SAME MISS, SPLIT — the measurement that decides it.")
+        println(String.format(
+            "    ball vs where it was AIMED   %.2f m", (if (split == 0L) 0.0 else bva / split)))
+        println(String.format(
+            "    aim  vs where the man WAS    %.2f m", (if (split == 0L) 0.0 else avm / split)))
+        println("  The first is physics: strike speed, drag, delivery jitter. The")
+        println("  second is prediction: he was led to a place he did not go. Three")
+        println("  attempts have been made to fix completion by changing what happens")
+        println("  when the ball ARRIVES, and all three failed, because a ball that")
+        println("  was never near the man cannot be rescued by an arrival rule.")
+        println("  Whichever of these two is larger is the real job.")
     }
 
     println()

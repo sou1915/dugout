@@ -160,12 +160,30 @@ object Decide {
              * flight time. Tested once before and returned nothing, but that
              * ran while every pass overshot by five metres.
              */
-            val mps = speedFor(d, loft)
-            val flight = (d / mps).coerceIn(0f, 2.5f)
-            out.add(Option(kind, t,
-                (t.x + t.vx * flight).coerceIn(1f, Pitch.LENGTH - 1f),
-                (t.y + t.vy * flight).coerceIn(1f, Pitch.WIDTH - 1f),
-                mps, loft))
+            /*
+             * SOLVE FOR THE DISTANCE ACTUALLY STRUCK, NOT THE DISTANCE TO HIM.
+             *
+             * The pace was solved for `d`, the range to the man, and then the
+             * ball was struck at the LEAD POINT, which is somewhere else. While
+             * every pass overshot that error was invisible; the moment the
+             * strike became exact it turned into a systematic undershoot, and
+             * "ball vs where it was aimed" went UP even though the physics had
+             * just been fixed.
+             *
+             * The lead depends on the flight time and the flight time depends
+             * on the pace, so it is a fixed point. Two iterations settle it to
+             * well under a metre — this is a pass, not an orbital insertion.
+             */
+            var mps = speedFor(d, loft)
+            var ax = t.x
+            var ay = t.y
+            repeat(2) {
+                val flight = (d / mps).coerceIn(0f, 2.5f)
+                ax = (t.x + t.vx * flight).coerceIn(1f, Pitch.LENGTH - 1f)
+                ay = (t.y + t.vy * flight).coerceIn(1f, Pitch.WIDTH - 1f)
+                mps = speedFor(Physics.dist(carrier.x, carrier.y, ax, ay), loft)
+            }
+            out.add(Option(kind, t, ax, ay, mps, loft))
 
             // Into the space ahead of him — a different act with a different risk.
             if (out.size < MAX_OPTIONS && forward > -4f) {
@@ -187,8 +205,10 @@ object Decide {
             if (out.size >= MAX_OPTIONS) break
             val ax = (myAttX + 12f).coerceAtMost(Pitch.LENGTH - 2f)
             val ay = (Pitch.attY(side, carrier.y) + k * 10f).coerceIn(2f, Pitch.WIDTH - 2f)
-            out.add(Option(OptKind.CARRY, null,
-                Pitch.absX(side, ax), Pitch.absY(side, ay), 7f, 0f))
+            val cx = Pitch.absX(side, ax)
+            val cy = Pitch.absY(side, ay)
+            out.add(Option(OptKind.CARRY, null, cx, cy,
+                speedFor(Physics.dist(carrier.x, carrier.y, cx, cy), 0f), 0f))
         }
 
         /*
@@ -266,9 +286,16 @@ object Decide {
 
         // Get rid of it — always available, and correctly awful in good areas.
         if (out.size < MAX_OPTIONS) {
+            // A CLEARANCE WAS NEVER SOLVED EITHER — struck at a flat 24 m/s
+            // with a loft of 20, which the probe puts fifty metres downfield of
+            // where it was aimed. Sixty of these a match, every one of them
+            // sailing past everybody. It is the same bug as the cross and the
+            // switch, hiding in a hard-coded number instead of in a formula.
             val ax = (myAttX + 40f).coerceAtMost(Pitch.LENGTH - 2f)
-            out.add(Option(OptKind.CLEAR, null,
-                Pitch.absX(side, ax), Pitch.absY(side, Pitch.WIDTH * 0.5f), 24f, 20f))
+            val hx = Pitch.absX(side, ax)
+            val hy = Pitch.absY(side, Pitch.WIDTH * 0.5f)
+            out.add(Option(OptKind.CLEAR, null, hx, hy,
+                speedFor(Physics.dist(carrier.x, carrier.y, hx, hy), 20f), 20f))
         }
     }
 
@@ -286,9 +313,21 @@ object Decide {
      * (cutting it 26 -> 9 moved the miss 0.34 m) and it is not the receiver
      * moving (leading the pass moved it 0.14 m). The ball was never aimed to
      * STOP at him.
+     *
+     * AND THE CORRECTION WAS ITSELF WRONG, for two years of engine-time and
+     * three failed attempts at the symptom. `d * ROLL_DRAG` is right for a ball
+     * that ROLLS the whole way; the `+ loft * 0.35` bolted onto it had the sign
+     * of the world backwards, because a lofted ball spends its journey in air
+     * whose drag is a fraction of grass's and therefore needs LESS pace, not
+     * more. A cross aimed 30 m landed 49 m away. A clearance aimed 30 m landed
+     * 73 m away.
+     *
+     * It is not a curve any more. [Physics.solveStrike] bisects against the
+     * engine's own flight simulation, so the answer cannot drift away from the
+     * physics it is supposed to describe — which no hand-fitted expression can
+     * promise.
      */
-    private fun speedFor(d: Float, loft: Float): Float =
-        (d * Physics.ROLL_DRAG + 2.5f + loft * 0.35f).coerceIn(6f, 30f)
+    private fun speedFor(d: Float, loft: Float): Float = Physics.solveStrike(d, loft)
 
     /*
      * SCORING AND CHOOSING USED TO LIVE HERE. THEY LIVE IN A MAN NOW.

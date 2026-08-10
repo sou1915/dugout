@@ -320,6 +320,34 @@ class MatchSim(
     @JvmField var deliveryCount = 0
     @JvmField var deliveryNear = 0
 
+    /**
+     * THE 8.6 METRES, SPLIT IN TWO. This is the measurement nobody had taken.
+     *
+     * Three separate attempts have now been made to fix pass completion by
+     * changing what happens when the ball ARRIVES — a 50-50 contest, a loose
+     * ball, and a man taking it in flight — and all three hit the same wall,
+     * because a ball that was never near the intended man cannot be rescued by
+     * any rule about who touches it.
+     *
+     * But "the miss is 8.6 m" does not say whose fault it is, and the two
+     * possible culprits need different fixes:
+     *
+     *   ballVsAim   where the ball STOPPED against where it was AIMED. This is
+     *               physics — strike speed, drag, delivery jitter.
+     *   aimVsMan    where it was aimed against where the man ACTUALLY WAS when
+     *               it got there. This is prediction — he was led to a place he
+     *               did not go.
+     *
+     * They sum to the miss. Whichever is larger is the real open job, and
+     * everything else about passing has been guesswork until this number
+     * exists.
+     */
+    @JvmField var ballVsAimSum = 0.0
+    @JvmField var aimVsManSum = 0.0
+    @JvmField var splitCount = 0
+    private var aimX = 0f
+    private var aimY = 0f
+
     @JvmField var arriveGapSum = 0.0
     @JvmField var arriveGapCount = 0
 
@@ -360,6 +388,7 @@ class MatchSim(
         settle(pendingKind != OptKind.SHOT && side == pendingSide)
         restartSide = side
         lastStriker = null
+        lastReceiver = null
         stillFor = 0f
         wasMoving = false
     }
@@ -453,6 +482,10 @@ class MatchSim(
                 )
                 lastStriker = blocker
                 lastKind = OptKind.CLEAR
+                // The man the SHOT was never aimed at must not stay on the
+                // books — a stale receiver here quietly poisons the delivery
+                // measurement with the distance to somebody irrelevant.
+                lastReceiver = null
                 strikeX = ball.x
                 strikeY = ball.y
                 restartSide = -1
@@ -465,6 +498,8 @@ class MatchSim(
         lastStriker = m
         lastKind = chosen.kind
         lastReceiver = chosen.receiver
+        aimX = tx
+        aimY = ty
         strikeX = ball.x
         strikeY = ball.y
         restartSide = -1
@@ -643,6 +678,11 @@ class MatchSim(
             deliverySum += d.toDouble()
             deliveryCount++
             if (d < 2f) deliveryNear++
+
+            // The same miss, decomposed. See the fields for why.
+            ballVsAimSum += Physics.dist(ball.x, ball.y, aimX, aimY).toDouble()
+            aimVsManSum += Physics.dist(aimX, aimY, t.x, t.y).toDouble()
+            splitCount++
         }
         if (m.side != s.side) {
             /*
@@ -1081,6 +1121,39 @@ class MatchSim(
      * So the honest statement of the open job is not "the loose ball" any more.
      * It is DELIVERY. The overshoot was found and fixed, the error scale was
      * swept, leading the pass was tested — and 8.61 m survived all three.
+     *
+     * -------------------------------------------------------------------
+     * THIRD ATTEMPT: LET A MAN TAKE A MOVING BALL. Reverted.
+     *
+     * The diagnosis was good and the reasoning was sound: the ball was only
+     * ever touched AT REST, so nobody in ninety minutes received one in stride,
+     * and a defender standing in a lane always ended up nearest a ball that
+     * stopped however fast it went past him. It was built properly — a swept
+     * test against the segment travelled each tick so a driven pass could not
+     * tunnel through a man, a control roll that fell with pace and rose for the
+     * man it was played to, a grace period so a pass could leave the crowd
+     * around the striker, and only the opposition plus the intended receiver
+     * allowed to try, because a team-mate does not cut out his own side's pass.
+     *
+     * Swept over four reach radii, 24 matches each:
+     *
+     *   reach  goals  passes  completion  intercept  loose  miss
+     *   1.10   1.25  1246.3      55.2%       280.1  218.9  7.80
+     *   0.80   1.42  1104.1      55.8%       233.1  181.9  7.83
+     *   0.60   1.17  1005.5      57.0%       198.1  146.4  7.82
+     *   0.40   1.13   925.4      56.8%       173.2  117.2  8.12
+     *   off    0.98   793.2      59.1%       109.3   53.5  8.60
+     *
+     * Every radius made completion WORSE and interceptions worse, and the miss
+     * moved 8.60 -> 7.80 at best. The reason is the whole point: the men
+     * getting these new touches are almost all OPPONENTS. The intended receiver
+     * hardly ever gets one, because the ball's path does not come within a
+     * metre of him — which is the same wall again, from a third direction.
+     *
+     * What survives is the diagnosis, sharpened: it is not the arrival rule. It
+     * is that the ball does not go where the man is. So this commit ships the
+     * measurement that decides WHY instead of another attempt at the symptom —
+     * see [ballVsAimSum] and [aimVsManSum].
      */
     /** How many of [side]'s men sit within [r] of a point. */
     fun matesWithin(x: Float, y: Float, r: Float, side: Int): Int {
