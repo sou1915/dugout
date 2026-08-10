@@ -67,6 +67,9 @@ class MatchSim(
 
         const val CROSSBAR_M = 2.44f
 
+        /** Metres of delivery error at full error. */
+        const val DELIVERY_SCALE = 11f
+
         /** Half the width a body actually blocks, metres. */
         const val BLOCK_HALF_WIDTH = 0.75f
 
@@ -266,8 +269,12 @@ class MatchSim(
          */
         val space = pressure.coerceIn(0f, 14f)
         val err = (0.185f - 0.0125f * space).coerceAtLeast(0.012f)
-        val jitterX = outcome.range(-1f, 1f) * err * 26f
-        val jitterY = outcome.range(-1f, 1f) * err * 26f
+        // Re-tested AFTER the overshoot was fixed. The first test of this
+        // scale returned nothing, but it ran while every pass was overshooting
+        // by five metres, which swamped it — a null result measured under a
+        // confound is not a null result.
+        val jitterX = outcome.range(-1f, 1f) * err * DELIVERY_SCALE
+        val jitterY = outcome.range(-1f, 1f) * err * DELIVERY_SCALE
         val tx = (chosen.tx + jitterX).coerceIn(-4f, Pitch.LENGTH + 4f)
         val ty = (chosen.ty + jitterY).coerceIn(-4f, Pitch.WIDTH + 4f)
 
