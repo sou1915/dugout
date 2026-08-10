@@ -1,5 +1,6 @@
 package com.dugout.career.sim
 
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -62,6 +63,11 @@ class MatchSim(
         const val SHORT_PASS_M = 24f
 
         const val CROSSBAR_M = 2.44f
+
+        /** How far across his line a keeper gets to a struck ball, metres. */
+        const val GK_REACH = 2.5f
+        /** A ball along the ground is easier to go down to. */
+        const val GK_LOW_BONUS = 0.7f
 
         /** Angles a supporting man tries around the carrier. */
         const val SUPPORT_ANGLES = 7
@@ -217,9 +223,23 @@ class MatchSim(
 
         // Execution is separate from choice. He aims; error, flight and whoever
         // reaches it first decide what actually happens.
-        val err = (1f - 0.055f * pressure).coerceIn(0.55f, 1f)
-        val jitterX = outcome.range(-1f, 1f) * (1f - err) * 26f
-        val jitterY = outcome.range(-1f, 1f) * (1f - err) * 26f
+        /*
+         * INVERTED, AND LOAD-BEARING.
+         *
+         * `pressureOn` returns METRES TO THE NEAREST OPPONENT, so a large value
+         * means a man is FREE. The first version read `1 - 0.055 * pressure`,
+         * giving a man in acres of space the biggest delivery error and a man
+         * being closed down a perfect pass — exactly backwards.
+         *
+         * It could not be fixed alone: the wild passing was the only thing
+         * standing in for a goalkeeper who did not exist, and correcting it by
+         * itself took the score to 73.9 goals a match. It lands here together
+         * with the save model below, which is why this is one commit.
+         */
+        val space = pressure.coerceIn(0f, 14f)
+        val err = (0.185f - 0.0125f * space).coerceAtLeast(0.012f)
+        val jitterX = outcome.range(-1f, 1f) * err * 26f
+        val jitterY = outcome.range(-1f, 1f) * err * 26f
         val tx = (chosen.tx + jitterX).coerceIn(-4f, Pitch.LENGTH + 4f)
         val ty = (chosen.ty + jitterY).coerceIn(-4f, Pitch.WIDTH + 4f)
 
@@ -293,6 +313,27 @@ class MatchSim(
             val betweenPosts = ball.y > half - Pitch.GOAL_WIDTH * 0.5f &&
                 ball.y < half + Pitch.GOAL_WIDTH * 0.5f
             if (betweenPosts && ball.height < CROSSBAR_M) {
+                /*
+                 * THE KEEPER IS A BODY, NOT A DICE ROLL.
+                 *
+                 * He saves it if he can REACH it — the same claim logic every
+                 * other contest in this engine uses. He tracks the ball across
+                 * his line, so a shot down the middle is routine and one into
+                 * the corner beats him, and that falls out of where he is
+                 * standing rather than out of a save percentage.
+                 */
+                val gk = men.first { it.side == defender && it.isKeeper }
+                val across = abs(gk.y - ball.y)
+                val reach = GK_REACH + (if (ball.height < 0.9f) GK_LOW_BONUS else 0f)
+                if (across < reach) {
+                    events.fire(
+                        if (across < 1.3f) Ev.SAVE_ROUTINE else Ev.SAVE_DIVING, defender
+                    )
+                    val gx = if (defender == 0) 7f else Pitch.LENGTH - 7f
+                    ball.place(gx, ball.y.coerceIn(6f, Pitch.WIDTH - 6f))
+                    deadBall(defender)
+                    return true
+                }
                 events.fire(Ev.GOAL, scorer)
                 goals[scorer]++
                 resetPositions()

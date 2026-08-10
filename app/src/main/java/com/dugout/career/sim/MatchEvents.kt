@@ -85,8 +85,8 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     OFFSIDE(EvGroup.DEFENDING),
 
     // ------------------------------------------------------------ goalkeeping
-    SAVE_ROUTINE(EvGroup.GOALKEEPING),
-    SAVE_DIVING(EvGroup.GOALKEEPING),
+    SAVE_ROUTINE(EvGroup.GOALKEEPING, wired = true),
+    SAVE_DIVING(EvGroup.GOALKEEPING, wired = true),
     SAVE_TIP_OVER(EvGroup.GOALKEEPING),
     SAVE_PARRY(EvGroup.GOALKEEPING),
     SAVE_PENALTY(EvGroup.GOALKEEPING),
