@@ -71,6 +71,27 @@ class MatchSim(
 
         /** How close an opponent must be for a first touch to be contested. */
         const val CONTEST_M = 3.0f
+
+        /** Within this an opponent can challenge for the ball, metres. */
+        const val TACKLE_M = 2.4f
+        /**
+         * How often a challenge is made at all, at zero range.
+         *
+         * 0.55 gave 37.6 tackles a match against a §5 band of 30-36. 0.48 lands
+         * inside it. That is the only number here chosen to hit a row, and it
+         * is defensible because the row IS the anchor for this quantity —
+         * unlike a physical constant, "how often a defender goes in" has no
+         * meaning independent of how often defenders go in.
+         */
+        @JvmField var TACKLE_RATE = 0.48f
+        /** A slide wins it more often and fouls far more often. */
+        const val WIN_STAND = 0.55f
+        const val WIN_SLIDE = 0.62f
+        const val FOUL_STAND = 0.09f
+        const val FOUL_SLIDE = 0.22f
+        /** Booking rate for a foul that stops something, and for one that does not. */
+        const val CARD_STOPPING = 0.16f
+        const val CARD_ROUTINE = 0.05f
         /**
          * Chance a dead-heat contest breaks loose.
          *
@@ -652,10 +673,19 @@ class MatchSim(
 
         val code = "T$ticks.S${m.side}P${m.slot.id}.CONTEST"
         if (draw.next(code) > pLoose) return false
+        breakLoose("T$ticks.LOOSE")
+        return true
+    }
 
-        // It breaks. The pass that was in flight did not reach anybody, so the
-        // striker's prediction is answered and the length of it is still a
-        // fact worth counting — an incomplete pass is a pass.
+    /**
+     * NOBODY HAS IT. Used by a contest that broke and by a challenge that came
+     * out with nothing.
+     *
+     * The pass that was in flight did not reach anybody, so the striker's
+     * prediction is answered and the length of it is still a fact worth
+     * counting — an incomplete pass is a pass.
+     */
+    private fun breakLoose(code: String) {
         val s = lastStriker
         if (s != null) {
             val d = Physics.dist(strikeX, strikeY, ball.x, ball.y)
@@ -669,21 +699,135 @@ class MatchSim(
         }
 
         events.fire(Ev.LOOSE_BALL, -1)
-        // Away from the two of them, roughly, and not far. A broken ball is a
-        // scramble, not a clearance.
-        val bc = "T$ticks.LOOSE"
+        // Away from them, roughly, and not far. A broken ball is a scramble,
+        // not a clearance.
         Physics.strike(
             ball,
-            draw.range("$bc.X", -1f, 1f), draw.range("$bc.Y", -1f, 1f),
-            draw.range("$bc.PACE", LOOSE_PACE_LO, LOOSE_PACE_HI),
-            draw.range("$bc.LOFT", 0f, 2.5f)
+            draw.range("$code.X", -1f, 1f), draw.range("$code.Y", -1f, 1f),
+            draw.range("$code.PACE", LOOSE_PACE_LO, LOOSE_PACE_HI),
+            draw.range("$code.LOFT", 0f, 2.5f)
         )
         lastStriker = null
         lastKind = null
         lastReceiver = null
         restartSide = -1
         stillFor = 0f
+    }
+
+    /**
+     * SOMEBODY COMES AND TAKES IT OFF HIM — the tackle, the foul, the card.
+     *
+     * Until this existed a man could not be dispossessed by anybody DOING
+     * anything. The only way to lose the ball was to strike it badly, so the
+     * whole defensive half of football was a geometry problem: stand in the
+     * right place and wait for a pass to arrive near you.
+     *
+     * The window is the instant he receives it. That is not a simplification of
+     * football so much as a consequence of this engine's clock: a man receives
+     * and plays in the same tick, so there is no carrying phase to interrupt.
+     * When there is a real carry, this becomes a check that runs every tick he
+     * has it, and nothing else here has to change.
+     *
+     * Four outcomes, because a challenge has four:
+     *
+     *   nothing        nobody was close enough, or nobody went in
+     *   WON            the ball is his now, and he plays it
+     *   LOOSE          neither of them came out with it — the ball breaks, and
+     *                  it breaks through the same [breakLoose] a 50-50 uses
+     *   FOUL           he took the man. Free kick, sometimes a card, and inside
+     *                  the box a penalty
+     *
+     * Returns true when the possession ended here and he does NOT get to play.
+     */
+    private fun challenged(m: Man): Boolean {
+        if (m.isKeeper || restartSide >= 0) return false
+
+        var rival: Man? = null
+        var gap = TACKLE_M
+        for (o in men) {
+            if (o.side == m.side || o.isKeeper) continue
+            val d = Physics.dist(o.x, o.y, m.x, m.y)
+            if (d < gap) { gap = d; rival = o }
+        }
+        val t = rival ?: return false
+
+        val code = "T$ticks.S${t.side}P${t.slot.id}.TACKLE"
+        // Closer means more likely to go in at all.
+        val pGo = (TACKLE_RATE * (1f - gap / TACKLE_M)).coerceIn(0f, 1f)
+        if (draw.next("$code.GO") > pGo) return false
+
+        // A lunge from range is a slide; from close, a standing challenge.
+        val slide = gap > TACKLE_M * 0.55f
+        events.fire(if (slide) Ev.TACKLE_SLIDING else Ev.TACKLE_STANDING, t.side)
+
+        /*
+         * A SLIDE IS MORE LIKELY TO WIN IT AND MUCH MORE LIKELY TO FOUL. That
+         * is the whole trade a defender makes, and it is the only reason to
+         * distinguish the two at all — a pair of names with identical odds
+         * would be decoration, which is what RoleCheck exists to catch
+         * elsewhere.
+         */
+        val pFoul = if (slide) FOUL_SLIDE else FOUL_STAND
+        val pWin = if (slide) WIN_SLIDE else WIN_STAND
+        val r = draw.next("$code.OUT")
+
+        if (r < pFoul) { foul(t, m); return true }
+        if (r < pFoul + pWin) {
+            events.fire(Ev.DISPOSSESSED, m.side)
+            lastStriker = null
+            lastKind = null
+            lastReceiver = null
+            ball.place(t.x, t.y)
+            strikeOn(t)
+            return true
+        }
+        breakLoose("T$ticks.TACKLE_LOOSE")
         return true
+    }
+
+    /**
+     * He took the man. Where it happened decides what it is worth.
+     *
+     * A foul is the first thing in this engine that STOPS the game in the
+     * attacking side's favour, which is why it is also the first route to a
+     * penalty — and a penalty is not special-cased into a goal here. The ball
+     * is put on the spot and the taker's own [Mind] decides what to do with it,
+     * against a value surface that already prices a shot from twelve yards at
+     * about 0.76. The football decides; nothing is scripted.
+     */
+    private fun foul(offender: Man, victim: Man) {
+        events.fire(Ev.FOUL, offender.side)
+
+        val attX = Pitch.attX(victim.side, ball.x)
+        val half = Pitch.WIDTH * 0.5f
+        val inBox = attX > Pitch.LENGTH - 16.5f && abs(ball.y - half) < 20.16f
+
+        /*
+         * A CARD IS NOT A DICE ROLL ON EVERY FOUL. It is much likelier when a
+         * man is taken from behind at pace, or when the foul stops something.
+         * With no intent model yet, the honest stand-in is WHERE it happened:
+         * a foul in your own third is stopping an attack, and referees book
+         * that. Anything better needs an intent this engine does not have, and
+         * inventing one to make a number move is how the predecessor drifted.
+         */
+        val stopping = attX > 55f
+        val pCard = if (stopping) CARD_STOPPING else CARD_ROUTINE
+        if (draw.next("T$ticks.S${offender.side}P${offender.slot.id}.CARD") < pCard) {
+            events.fire(Ev.CARD_YELLOW, offender.side)
+            cards[offender.side]++
+        }
+
+        if (inBox) {
+            events.fire(Ev.FOUL_IN_BOX, offender.side)
+            events.fire(Ev.PENALTY_AWARDED, victim.side)
+            ball.place(
+                Pitch.absX(victim.side, Pitch.LENGTH - 11f),
+                half
+            )
+        } else {
+            events.fire(Ev.FREE_KICK_DIRECT, victim.side)
+        }
+        deadBall(victim.side)
     }
 
     /**
@@ -1088,7 +1232,9 @@ class MatchSim(
                 // He reaches it — but reaching it is not the same as having it.
                 if (!spilled(c)) {
                     resolveTouch(c)
-                    strikeOn(c)
+                    // He has it. Now somebody is allowed to come and take it
+                    // off him — which nobody in this engine could do until now.
+                    if (!challenged(c)) strikeOn(c)
                 }
             } else if (stillFor > 6f) {
                 /*

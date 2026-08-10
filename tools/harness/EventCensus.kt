@@ -116,9 +116,12 @@ fun main(args: Array<String>) {
             value = { val a = passes(it); if (a <= 0) null else 100.0 * rate(it, Ev.PASS_COMPLETED) / a },
             wired = { true }),
         Target("interceptions", 16.0, 22.0, value = { rate(it, Ev.INTERCEPTION) }, wired = { true }),
-        Target("tackles", 30.0, 36.0, value = { null }, wired = { false }),
+        Target("tackles", 30.0, 36.0,
+            value = { rate(it, Ev.TACKLE_STANDING) + rate(it, Ev.TACKLE_SLIDING) },
+            wired = { true }),
         Target("take-ons attempted", 30.0, 40.0, value = { null }, wired = { false }),
-        Target("fouls", 20.0, 24.0, value = { null }, wired = { false }),
+        Target("fouls", 20.0, 24.0, value = { rate(it, Ev.FOUL) }, wired = { true }),
+        Target("yellow cards", 3.0, 4.5, value = { rate(it, Ev.CARD_YELLOW) }, wired = { true }),
         Target("offsides", 4.0, 6.0, value = { null }, wired = { false })
     )
 

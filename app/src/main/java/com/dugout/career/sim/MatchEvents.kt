@@ -86,8 +86,8 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     BLOCK(EvGroup.DEFENDING),
     CLEARANCE_HOOFED(EvGroup.DEFENDING, wired = true),
     CLEARANCE_HEADED(EvGroup.DEFENDING),
-    TACKLE_STANDING(EvGroup.DEFENDING),
-    TACKLE_SLIDING(EvGroup.DEFENDING),
+    TACKLE_STANDING(EvGroup.DEFENDING, wired = true),
+    TACKLE_SLIDING(EvGroup.DEFENDING, wired = true),
     TACKLE_LAST_DITCH(EvGroup.DEFENDING),
     /** A loose ball picked up. Nobody passed it to him; he went and got it. */
     RECOVERY_RUN(EvGroup.DEFENDING, wired = true),
@@ -111,14 +111,14 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     KEEPER_DISTRIBUTION(EvGroup.GOALKEEPING),
 
     // ------------------------------------------------------ fouls, discipline
-    FOUL(EvGroup.FOULS),
+    FOUL(EvGroup.FOULS, wired = true),
     FOUL_ADVANTAGE(EvGroup.FOULS),
-    FOUL_IN_BOX(EvGroup.FOULS),
+    FOUL_IN_BOX(EvGroup.FOULS, wired = true),
     HANDBALL(EvGroup.FOULS),
     PROFESSIONAL_FOUL(EvGroup.FOULS),
-    CARD_YELLOW(EvGroup.FOULS),
-    CARD_SECOND_YELLOW(EvGroup.FOULS),
-    CARD_RED(EvGroup.FOULS),
+    CARD_YELLOW(EvGroup.FOULS, wired = true),
+    CARD_SECOND_YELLOW(EvGroup.FOULS, wired = true),
+    CARD_RED(EvGroup.FOULS, wired = true),
 
     // -------------------------------------------------- set pieces, restarts
     THROW_IN(EvGroup.RESTARTS, wired = true),
@@ -126,9 +126,9 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     GOAL_KICK(EvGroup.RESTARTS, wired = true),
     CORNER_WON(EvGroup.RESTARTS, wired = true),
     CORNER_TAKEN(EvGroup.RESTARTS, wired = true),
-    FREE_KICK_DIRECT(EvGroup.RESTARTS),
+    FREE_KICK_DIRECT(EvGroup.RESTARTS, wired = true),
     FREE_KICK_INDIRECT(EvGroup.RESTARTS),
-    PENALTY_AWARDED(EvGroup.RESTARTS),
+    PENALTY_AWARDED(EvGroup.RESTARTS, wired = true),
     PENALTY_SCORED(EvGroup.RESTARTS),
     PENALTY_MISSED(EvGroup.RESTARTS),
     DROP_BALL(EvGroup.RESTARTS),
