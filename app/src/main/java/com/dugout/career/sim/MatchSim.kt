@@ -652,6 +652,32 @@ class MatchSim(
         return true
     }
 
+    /*
+     * THE LOOSE BALL — attempted as a 50-50 contest, and it missed.
+     *
+     * A dying ball was given to the man with the lowest claim time, so an
+     * incomplete pass was a turnover BY CONSTRUCTION. The attempt made it
+     * contested: when a second man was within 0.9 s of the first, the ball
+     * broke on the outcome stream weighted by the gap.
+     *
+     *   pass completion   69.46 -> 69.19    (target 78-85)
+     *   INTERCEPTION     218.70 -> 216.55   (target 16-22)
+     *   goals              1.35 ->   0.80   (target 2.6-2.9)
+     *
+     * Nothing moved except the score, downwards. Reverted.
+     *
+     * WHY IT MISSED, which is the useful part: completion asks whether the
+     * first toucher is a TEAM-MATE, and the contest is between whoever happens
+     * to be nearest where the ball died. Delivery error means that is rarely
+     * the intended receiver, so the coin-flip is usually between two opponents,
+     * or between an opponent and some other team-mate. Making possession more
+     * random does not make it more accurate.
+     *
+     * The loose ball is real and still needed, but it is not upstream of
+     * completion. Completion is upstream of IT: the ball has to arrive near the
+     * man it was aimed at often enough for a contest to involve him. That is
+     * delivery error and receiver movement, not the claim rule.
+     */
     /** How many of [side]'s men sit within [r] of a point. */
     fun matesWithin(x: Float, y: Float, r: Float, side: Int): Int {
         var n = 0
