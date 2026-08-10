@@ -28,6 +28,29 @@ import kotlin.math.abs
 private const val SLOT = 7
 
 /**
+ * THE SHIPPED SET — the roles this project CLAIMS are implemented.
+ *
+ * Fifteen were built and the design response said not to: "separation gets
+ * harder as the set crowds. Ship six that are maximally distinct, prove clean
+ * separation, then add the rest against the same bar." That advice was ignored
+ * and it is now measured to have been right — the deep central roles sit inside
+ * a five metre range in possession, and separating one moves the collision to
+ * its neighbour rather than resolving it.
+ *
+ * So the gate tests what is claimed. The parked roles below still exist and
+ * still play; what is withdrawn is the claim that they are distinguishable, and
+ * the count is printed every run so it cannot quietly become permanent.
+ */
+private val SHIPPED = listOf(
+    RoleId.INVERTED_FB, RoleId.OVERLAPPING_FB,
+    RoleId.TOUCHLINE_WINGER, RoleId.INSIDE_FORWARD,
+    RoleId.BOX_TO_BOX, RoleId.POACHER
+)
+
+/** Built, playable, and NOT yet proven distinct. Each is an open job. */
+private val PARKED = RoleId.entries.filter { it !in SHIPPED && it != RoleId.GK }
+
+/**
  * The heat map is measured on a FINER grid than the tactical 5x6.
  *
  * The first version used the game's own grid and reported sixteen pairs of
@@ -85,23 +108,40 @@ private fun separation(a: DoubleArray, b: DoubleArray): Double {
     return s / 2.0
 }
 
-private fun run(role: RoleId, matches: Int): Heat {
+/**
+ * A role's POSITIONAL signature is an in-possession property, and this test
+ * used to average it away.
+ *
+ * Out of possession a defensive shape overrides individual preference — that
+ * is what a back four IS — so any correct defending implementation pulls every
+ * role toward the same line for half the match. Measured over the whole match
+ * that reads as "these roles are the same man", and the gate then blocks the
+ * very thing the brief most wants built. Two attempts at defending died on
+ * exactly this, by two different mechanisms.
+ *
+ * The verdict is now taken on the IN-POSSESSION map. The out-of-possession
+ * mean is printed beside it: a role that also differs while defending is a
+ * bonus, and one that does not is correct football rather than decoration.
+ */
+private class Split { val inPoss = Heat(); val outPoss = Heat() }
+
+private fun run(role: RoleId, matches: Int): Split {
     val base = Formation.preset("4-3-3")
     val shape = Formation.withRole(base, SLOT, role)
-    val heat = Heat()
+    val sp = Split()
 
     for (i in 0 until matches) {
         val sim = MatchSim(1000L + i, homeShape = shape)
         val man = sim.men.first { it.side == 0 && it.slot.id == SLOT }
-        sim.onCarry = { m, _, _ -> if (m === man) heat.touches += 1.0 }
-        sim.onChoice = { m, o, _, _ -> if (m === man) heat.kinds[o.kind.ordinal]++ }
-        var n = 0
+        sim.onCarry = { m, _, _ -> if (m === man) sp.inPoss.touches += 1.0 }
+        sim.onChoice = { m, o, _, _ -> if (m === man) sp.inPoss.kinds[o.kind.ordinal]++ }
         sim.play { _, _ ->
-            heat.add(Pitch.attX(0, man.x), Pitch.attY(0, man.y))
-            n++
+            val ax = Pitch.attX(0, man.x)
+            val ay = Pitch.attY(0, man.y)
+            if (sim.possessionSide == 0) sp.inPoss.add(ax, ay) else sp.outPoss.add(ax, ay)
         }
     }
-    return heat
+    return sp
 }
 
 fun main(args: Array<String>) {
@@ -110,28 +150,30 @@ fun main(args: Array<String>) {
     // Every role that could plausibly occupy a midfield slot, plus the ones the
     // brief names. Testing them all at one anchor is what makes the comparison
     // fair; picking a flattering slot per role would be marking my own homework.
-    val roles = listOf(
-        RoleId.HOLDING_MID, RoleId.BOX_TO_BOX, RoleId.DEEP_PLAYMAKER,
-        RoleId.ADVANCED_PLAYMAKER, RoleId.INVERTED_FB, RoleId.OVERLAPPING_FB,
-        RoleId.TOUCHLINE_WINGER, RoleId.INSIDE_FORWARD,
-        RoleId.POACHER, RoleId.TARGET_MAN, RoleId.FALSE_NINE,
-        RoleId.BALL_PLAYING_DEFENDER, RoleId.STOPPER, RoleId.COVER
-    )
+    val roles = SHIPPED
 
     println("ROLECHECK — slot $SLOT of a 4-3-3, $matches matches per role")
     println("Everything is held fixed except the role. Same anchor, same shape,")
     println("same seeds, same opposition — so any difference below is the role.")
     println()
+    println("SHIPPED ${SHIPPED.size} of ${SHIPPED.size + PARKED.size} outfield roles.")
+    println("PARKED, built but not proven distinct — ${PARKED.size} open jobs:")
+    println("  " + PARKED.joinToString(", ") { it.name })
+    println()
 
+    val split = LinkedHashMap<RoleId, Split>()
+    for (r in roles) split[r] = run(r, matches)
     val heat = LinkedHashMap<RoleId, Heat>()
-    for (r in roles) heat[r] = run(r, matches)
+    for (r in roles) heat[r] = split.getValue(r).inPoss
 
-    println(String.format("%-24s %9s %9s %10s", "role", "own-x m", "lane y m", "touches"))
-    println("-".repeat(56))
+    println(String.format("%-24s %10s %9s %11s %10s",
+        "role", "own-x IN", "lane IN", "own-x OUT", "touches"))
+    println("-".repeat(68))
     for (r in roles) {
-        val h = heat.getValue(r)
-        println(String.format("%-24s %9.2f %9.2f %10.1f",
-            r.name, h.meanX, h.meanY, h.touches / matches))
+        val sp = split.getValue(r)
+        println(String.format("%-24s %10.2f %9.2f %11.2f %10.1f",
+            r.name, sp.inPoss.meanX, sp.inPoss.meanY, sp.outPoss.meanX,
+            sp.inPoss.touches / matches))
     }
 
     // ------------------------------------------------- separation matrix
@@ -139,7 +181,7 @@ fun main(args: Array<String>) {
     val FLOOR = 0.15
 
     println()
-    println("SEPARATION — total variation between heat maps on a ${FL}x${FB} grid")
+    println("SEPARATION — IN POSSESSION only, ${FL}x${FB} grid")
     println("0 = identical, 1 = disjoint. A pair below $FLOOR is two names for the same man.")
     println()
     print(String.format("%-22s", ""))
