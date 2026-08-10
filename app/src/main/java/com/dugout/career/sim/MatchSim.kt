@@ -67,6 +67,11 @@ class MatchSim(
 
         const val CROSSBAR_M = 2.44f
 
+        /** How far goal-side of the ball the deepest defender sits, metres. */
+        const val DEFEND_STANDOFF = 8f
+        /** Metres a defending man may stand upfield of the ball. */
+        const val GOAL_SIDE_ALLOWANCE = 4f
+
         /** Metres of delivery error at full error. */
         const val DELIVERY_SCALE = 11f
 
@@ -138,6 +143,9 @@ class MatchSim(
     private var ticks = 0
     private var wasMoving = false
 
+    /** Deepest compiled anchor per side — where the defensive line starts. */
+    private val deepestAx = FloatArray(2)
+
     private val supportX = FloatArray(22)
     private val supportY = FloatArray(22)
     private val supportSet = BooleanArray(22)
@@ -198,6 +206,12 @@ class MatchSim(
             shape.compile(false, anchorAx[side][0], anchorAy[side][0])
             shape.compile(true, anchorAx[side][1], anchorAy[side][1])
             for (s in shape.slots) men.add(Man(side, s))
+        }
+        for (side in 0..1) {
+            var lo = Float.MAX_VALUE
+            for (m in men) if (m.side == side && !m.isKeeper)
+                if (anchorAx[side][0][m.slot.id] < lo) lo = anchorAx[side][0][m.slot.id]
+            deepestAx[side] = lo
         }
         resetPositions()
         kickOff(0)
@@ -605,7 +619,32 @@ class MatchSim(
                 val k = m.leashM / len
                 dx *= k; dy *= k
             }
-            val tAx = (ax + dx).coerceIn(1.5f, Pitch.LENGTH - 1.5f).coerceAtMost(m.maxAttX)
+            /*
+             * DEFENDING IS A LINE BETWEEN THE BALL AND THE GOAL.
+             *
+             * Attempted four times before. The first three failed on their own
+             * terms; the fourth was blocked by RoleCheck, which then measured
+             * role separation over the WHOLE match — so a correct defensive
+             * shape, which pulls every role toward one line, looked like
+             * decoration. That criterion now measures in possession only, so
+             * this can finally be judged on whether it defends.
+             *
+             * The line is computed from the BALL and the leash does not apply:
+             * a leash limits how far a man roams from his station in
+             * possession, never how far he runs home. The block compresses as
+             * the ball nears the goal, because holding thirty metres of depth
+             * in your own box leaves only the deepest man behind it.
+             */
+            var tAx: Float
+            if (possessionSide >= 0 && possessionSide != m.side) {
+                val lineAx = min(deepestAx[m.side], ballAx - DEFEND_STANDOFF).coerceAtLeast(3f)
+                val squeeze = (ballAx / 42f).coerceIn(0.28f, 1f)
+                val rel = (ax - deepestAx[m.side]) * squeeze
+                tAx = (lineAx + rel).coerceAtMost(ballAx + GOAL_SIDE_ALLOWANCE)
+                    .coerceIn(1.5f, Pitch.LENGTH - 1.5f).coerceAtMost(m.maxAttX)
+            } else {
+                tAx = (ax + dx).coerceIn(1.5f, Pitch.LENGTH - 1.5f).coerceAtMost(m.maxAttX)
+            }
             val tAy = (ay + dy).coerceIn(1.5f, Pitch.WIDTH - 1.5f)
             var wantX = Pitch.absX(m.side, tAx)
             var wantY = Pitch.absY(m.side, tAy)
