@@ -241,8 +241,23 @@ object Decide {
         }
     }
 
+    /**
+     * SOLVE THE STRIKE FOR THE DISTANCE — do not guess it.
+     *
+     * This was `7 + d*0.42 + loft*0.25`, an invented curve. A ball rolling
+     * under ROLL_DRAG loses speed as v*(1 - drag*dt) per step, so the distance
+     * it still has to travel is the sum of that series: v / drag. The speed
+     * that stops a ball at d is therefore d * drag, and the old curve was
+     * giving 15.4 m/s for a 20 m pass where 12.4 stops it there — a systematic
+     * five metre overshoot on every pass in the match.
+     *
+     * That is where the 8.57 m mean miss comes from. It is not delivery error
+     * (cutting it 26 -> 9 moved the miss 0.34 m) and it is not the receiver
+     * moving (leading the pass moved it 0.14 m). The ball was never aimed to
+     * STOP at him.
+     */
     private fun speedFor(d: Float, loft: Float): Float =
-        (7f + d * 0.42f + loft * 0.25f).coerceIn(8f, 30f)
+        (d * Physics.ROLL_DRAG + 2.5f + loft * 0.35f).coerceIn(6f, 30f)
 
     /** Score every option on axes that are kept separate until the last moment. */
     fun score(sim: MatchSim, carrier: Man, options: ArrayList<Option>) {
