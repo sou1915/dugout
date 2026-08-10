@@ -90,7 +90,7 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     SAVE_TIP_OVER(EvGroup.GOALKEEPING),
     SAVE_PARRY(EvGroup.GOALKEEPING),
     SAVE_PENALTY(EvGroup.GOALKEEPING),
-    KEEPER_CLAIM_CROSS(EvGroup.GOALKEEPING),
+    KEEPER_CLAIM_CROSS(EvGroup.GOALKEEPING, wired = true),
     KEEPER_PUNCH(EvGroup.GOALKEEPING),
     KEEPER_SWEEP(EvGroup.GOALKEEPING),
     KEEPER_DISTRIBUTION(EvGroup.GOALKEEPING),

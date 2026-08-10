@@ -352,8 +352,23 @@ class MatchSim(
                 val across = abs(gk.y - ball.y)
                 val reach = GK_REACH + (if (ball.height < 0.9f) GK_LOW_BONUS else 0f)
                 if (across < reach) {
+                    /*
+                     * A SAVE IS A SHOT STOPPED, NOT ANY BALL STOPPED.
+                     *
+                     * This fired for every ball crossing between the posts —
+                     * stray passes, clearances, deflections off a block — so it
+                     * read 23 saves a match from about ten unblocked shots,
+                     * which is arithmetically impossible and was the tell. The
+                     * keeper still stops those balls; they are simply not
+                     * saves, and counting them as such both inflated the save
+                     * rate and suppressed goals by turning loose balls into
+                     * keeper possession.
+                     */
+                    val wasShot = lastKind == OptKind.SHOT
                     events.fire(
-                        if (across < 1.3f) Ev.SAVE_ROUTINE else Ev.SAVE_DIVING, defender
+                        if (!wasShot) Ev.KEEPER_CLAIM_CROSS
+                        else if (across < 1.3f) Ev.SAVE_ROUTINE else Ev.SAVE_DIVING,
+                        defender
                     )
                     val gx = if (defender == 0) 7f else Pitch.LENGTH - 7f
                     ball.place(gx, ball.y.coerceIn(6f, Pitch.WIDTH - 6f))
