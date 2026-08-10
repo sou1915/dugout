@@ -90,8 +90,16 @@ class MatchSim(
         const val SUPPORT_BLEND = 0.55f
     }
 
-    /** Outcomes. Presentation draws go on [presentation] and never on this. */
-    private val outcome = Rng(seed)
+    /**
+     * Outcomes, resolved BY CODE rather than by queue position.
+     *
+     * Every draw names itself — match, tick, player, purpose — so adding a new
+     * random decision anywhere leaves every existing one byte-identical. Under
+     * the old sequential Rng a single new draw shifted the entire match, which
+     * made "what did my change actually do?" unanswerable. DrawCheck gates the
+     * property and CI enforces it.
+     */
+    @JvmField val draw = Draw(seed)
 
     @Suppress("unused")
     private val presentation = Rng(seed xor 0x5eed_0000_0000_0001L)
@@ -247,7 +255,10 @@ class MatchSim(
         }
 
         Decide.score(this, m, optionBuf)
-        val chosen = Decide.choose(optionBuf, Decide.temperature(pressure), outcome)
+        val chosen = Decide.choose(
+            optionBuf, Decide.temperature(pressure),
+            draw.next("T$ticks.S${m.side}P${m.slot.id}.CHOOSE")
+        )
         onChoice?.invoke(m, chosen, optionBuf.size, pressure)
 
         fireIntent(m, chosen)
@@ -273,8 +284,9 @@ class MatchSim(
         // scale returned nothing, but it ran while every pass was overshooting
         // by five metres, which swamped it — a null result measured under a
         // confound is not a null result.
-        val jitterX = outcome.range(-1f, 1f) * err * DELIVERY_SCALE
-        val jitterY = outcome.range(-1f, 1f) * err * DELIVERY_SCALE
+        val who = "T$ticks.S${m.side}P${m.slot.id}"
+        val jitterX = draw.range("$who.DELIVERY_X", -1f, 1f) * err * DELIVERY_SCALE
+        val jitterY = draw.range("$who.DELIVERY_Y", -1f, 1f) * err * DELIVERY_SCALE
         val tx = (chosen.tx + jitterX).coerceIn(-4f, Pitch.LENGTH + 4f)
         val ty = (chosen.ty + jitterY).coerceIn(-4f, Pitch.WIDTH + 4f)
 
@@ -286,10 +298,11 @@ class MatchSim(
             if (blocker != null) {
                 events.fire(Ev.SHOT_BLOCKED, blocker.side)
                 ball.place(blocker.x, blocker.y)
+                val bc = "T$ticks.S${blocker.side}P${blocker.slot.id}.BLOCK"
                 Physics.strike(
                     ball,
-                    outcome.range(-1f, 1f), outcome.range(-1f, 1f),
-                    outcome.range(4f, 11f), outcome.range(0f, 14f)
+                    draw.range("$bc.X", -1f, 1f), draw.range("$bc.Y", -1f, 1f),
+                    draw.range("$bc.PACE", 4f, 11f), draw.range("$bc.LOFT", 0f, 14f)
                 )
                 lastStriker = blocker
                 lastKind = OptKind.CLEAR

@@ -345,7 +345,7 @@ object Decide {
      * a man with someone in his ear runs hot and is genuinely erratic. That is
      * one mechanism doing the work three systems used to do badly.
      */
-    fun choose(options: ArrayList<Option>, temperature: Float, rng: Rng): Option {
+    fun choose(options: ArrayList<Option>, temperature: Float, roll: Float): Option {
         if (options.size == 1) return options[0]
         var best = -Float.MAX_VALUE
         for (o in options) if (o.utility > best) best = o.utility
@@ -361,7 +361,7 @@ object Decide {
             w[i] = e
             sum += e
         }
-        var r = rng.nextFloat().toDouble() * sum
+        var r = roll.toDouble() * sum
         for (i in options.indices) {
             r -= w[i]
             if (r <= 0) return options[i]
