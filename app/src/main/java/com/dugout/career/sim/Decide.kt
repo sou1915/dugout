@@ -201,6 +201,32 @@ object Decide {
          * Same shape of error as the rulers earlier in this session — a check
          * that cannot disagree with what it is checking measures nothing.
          */
+        /*
+         * ATTEMPT 3 AT THE BLOCK RATE — the mechanism works, the trade does not.
+         *
+         * A perception radius NARROWER than the block half-width (0.34 m against
+         * 0.75 m) is the right shape: he shoots through a half-gap he thinks is
+         * on, the block fires on a wider body, and the difference between the
+         * two numbers IS the misjudgement. It fixed the row it aimed at:
+         *
+         *   SHOT_BLOCKED   16.50 -> 7.15    (target 8-10, and 42% of shots
+         *                                    against 61% before, real 30%)
+         *
+         * But it took the shot count down with it and the headline row went the
+         * wrong way:
+         *
+         *   shots          27.25 -> 17.00   (band 22-27)
+         *   goals           1.38 ->  0.85   (target 2.6-2.9)
+         *
+         * Reverted on the same rule that reverted the aim attempt: goals moving
+         * away from band is not paid for by one other row moving toward it.
+         *
+         * What it proves: the block rate is fixable and this is how. What it
+         * exposes: shot VOLUME and block RATE are currently the same lever,
+         * because the only way a man declines to shoot is by not seeing one.
+         * They separate when he has a better option to take instead — which is
+         * the loose ball and the defending shape, not another radius.
+         */
         // Shot, when there is a goal to shoot at.
         if (myAttX > 62f && out.size < MAX_OPTIONS) {
             val gx = Pitch.absX(side, Pitch.LENGTH - 0.5f)
