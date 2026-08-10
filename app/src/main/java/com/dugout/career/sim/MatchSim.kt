@@ -157,6 +157,27 @@ class MatchSim(
      * had exactly this measurement at a corner (7.6 m before the fix, 3.6 m
      * after) and it was the number that proved the fix.
      */
+    /**
+     * WHERE THE BALL ARRIVES relative to the man it was aimed at.
+     *
+     * Measurement only, and it settled a question three commits of guessing
+     * could not. Mean miss 8.57 m; only 36.2% of intended passes land within
+     * two metres of the man.
+     *
+     * A controlled experiment then ran: the delivery error scale was cut from
+     * 26 m to 9 m — inherited from the inverted formula and far too large — and
+     * the miss BARELY MOVED, 8.57 -> 8.23, completion 69.5 -> 70.6. So the miss
+     * is not delivery error at all.
+     *
+     * It is that a pass is aimed at where the receiver IS, and he has moved by
+     * the time it arrives. The ball is being played behind him. Leading the
+     * pass — aiming at his position plus his velocity over the flight time — is
+     * the fix, and it is a piece of football rather than a constant.
+     */
+    @JvmField var deliverySum = 0.0
+    @JvmField var deliveryCount = 0
+    @JvmField var deliveryNear = 0
+
     @JvmField var arriveGapSum = 0.0
     @JvmField var arriveGapCount = 0
 
@@ -337,6 +358,12 @@ class MatchSim(
          * a turnover by construction. Naming them is the first step to fixing
          * that.
          */
+        lastReceiver?.let { t ->
+            val d = Physics.dist(ball.x, ball.y, t.x, t.y)
+            deliverySum += d.toDouble()
+            deliveryCount++
+            if (d < 2f) deliveryNear++
+        }
         if (m.side != s.side) {
             val target = lastReceiver
             val cutOut = target != null &&

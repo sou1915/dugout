@@ -48,10 +48,12 @@ fun main(args: Array<String>) {
     val stats = HashMap<Ev, Stat>()
     for (e in Ev.ALL) stats[e] = Stat()
 
+    var dSum = 0.0; var dCount = 0L; var dNear = 0L
     for (i in 0 until matches) {
         val sim = MatchSim(1000L + i)
         sim.play()
         for (e in Ev.ALL) stats.getValue(e).add(sim.events[e].toDouble())
+        dSum += sim.deliverySum; dCount += sim.deliveryCount; dNear += sim.deliveryNear
     }
 
     println("=".repeat(78))
@@ -150,6 +152,16 @@ fun main(args: Array<String>) {
     println("  tackles, fouls and the loose ball land. The table is here so that it")
     println("  EXISTS and is wired to real counters, not so anyone starts tuning")
     println("  against it.")
+
+    println()
+    println("DELIVERY — where the ball arrives relative to the man it was aimed at")
+    if (dCount > 0) {
+        println(String.format("  mean miss %.2f m over %d intended passes", dSum / dCount, dCount))
+        println(String.format("  within 2 m of him: %.1f%%", 100.0 * dNear / dCount))
+        println("  This decides whether the passing problem is DELIVERY ERROR or")
+        println("  RECEIVER MOVEMENT. A small miss with low completion means the man")
+        println("  moved away; a large miss means the strike was wrong.")
+    }
 
     println()
     val wiredCount = Ev.WIRED.size
