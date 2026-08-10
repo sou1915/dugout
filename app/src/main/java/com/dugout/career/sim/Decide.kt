@@ -160,6 +160,26 @@ object Decide {
                 Pitch.absX(side, ax), Pitch.absY(side, ay), 7f, 0f))
         }
 
+        /*
+         * VARIANTS OF ONE ACT MUST NOT BE OFFERED AS SEPARATE OPTIONS.
+         *
+         * Measured, and it cost a working commit. Shot quality was attempted by
+         * generating a "placed" option at the far corner and a "driven" one
+         * nearer the middle. A softmax over two options of the same KIND gives
+         * that kind twice the weight, so shots went 27 -> 50 a match on their
+         * own, and blocks, saves, goals and corners all moved the wrong way.
+         *
+         * Aiming away from the keeper was the right idea — blocks fell 16.5 ->
+         * 4.75, which is what avoiding the bodies in the middle looks like —
+         * but with a single corner-aimed option the headline rows were still
+         * worse than not doing it: shots 34.6, blocks 2.20, goals 1.35 -> 1.00.
+         * Reverted, and recorded here so it is not rediscovered.
+         *
+         * The lesson generalises: how hard and where exactly a man strikes it
+         * belongs in EXECUTION. If it is offered as a candidate, the option set
+         * quietly becomes a vote on kinds and the chooser is measuring the
+         * generator instead of the football.
+         */
         // Shot, when there is a goal to shoot at.
         if (myAttX > 62f && out.size < MAX_OPTIONS) {
             val gx = Pitch.absX(side, Pitch.LENGTH - 0.5f)
