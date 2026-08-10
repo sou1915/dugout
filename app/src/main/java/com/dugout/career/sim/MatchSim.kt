@@ -121,8 +121,14 @@ class MatchSim(
 
     /** Who struck it last, and from where — the two facts a touch resolves against. */
     private var lastStriker: Man? = null
+    private var lastKind: OptKind? = null
     private var strikeX = 0f
     private var strikeY = 0f
+
+    private val optionBuf = ArrayList<Option>(Decide.MAX_OPTIONS + 2)
+
+    /** Set by a harness to sample the CHOSEN option. Never read by the engine. */
+    @JvmField var onChoice: ((Man, Option, Int, Float) -> Unit)? = null
 
     /** A dead ball belongs to one side until it is put back in play. */
     private var restartSide = -1
@@ -176,29 +182,77 @@ class MatchSim(
     }
 
     /**
-     * PLACEHOLDER, AND IT IS MARKED AS ONE.
+     * THE MAN ON THE BALL DECIDES.
      *
-     * Something has to put the ball in motion so that ball flight, the block
-     * that follows it and the event plumbing can be exercised and measured.
-     * This is not a decision layer, it does not score options, and it must be
-     * DELETED at step 5 rather than grown into one. Every rate the census
-     * prints is a rate produced by this, which is why the census says so at the
-     * top in capital letters.
+     * The step 2 placeholder that struck at a random point is GONE, as it was
+     * promised to be — deleted at step 5 rather than grown into a decision
+     * layer, which is how the predecessor ended up with a hand-weighted sum it
+     * could not fix by re-weighting.
+     *
+     * He now generates concrete options, scores them on four axes kept
+     * separate, and one is chosen by softmax rather than maximised. What he
+     * intended is then handed to the execution model: the ball is STRUCK with a
+     * weight and a direction and becomes an object again, so whether it reaches
+     * the man he picked is physics and claim times, not a success roll.
      */
     private fun strikeOn(m: Man) {
-        val forward = if (m.side == 0) 1f else -1f
-        val tx = (m.x + forward * outcome.range(8f, 46f)).coerceIn(2f, Pitch.LENGTH - 2f)
-        val ty = outcome.range(3f, Pitch.WIDTH - 3f)
-        val mps = outcome.range(11f, 26f)
-        val loft = if (outcome.nextFloat() < 0.30f) outcome.range(8f, 22f) else outcome.range(0f, 4f)
         if (cornerPending) { events.fire(Ev.CORNER_TAKEN, m.side); cornerPending = false }
-        onCarry?.invoke(m, optionsFor(m), pressureOn(m))
+
+        val pressure = pressureOn(m)
+        Decide.generate(this, m, pressure, optionBuf)
+        onCarry?.invoke(m, optionBuf.size, pressure)
+
+        if (optionBuf.isEmpty()) {
+            // Nothing available at all. Honest, and rare — it is a clearance.
+            val ax = (Pitch.attX(m.side, m.x) + 40f).coerceAtMost(Pitch.LENGTH - 2f)
+            optionBuf.add(Option(OptKind.CLEAR, null,
+                Pitch.absX(m.side, ax), Pitch.WIDTH * 0.5f, 24f, 20f))
+        }
+
+        Decide.score(this, m, optionBuf)
+        val chosen = Decide.choose(optionBuf, Decide.temperature(pressure), outcome)
+        onChoice?.invoke(m, chosen, optionBuf.size, pressure)
+
+        fireIntent(m, chosen)
+
+        // Execution is separate from choice. He aims; error, flight and whoever
+        // reaches it first decide what actually happens.
+        val err = (1f - 0.055f * pressure).coerceIn(0.55f, 1f)
+        val jitterX = outcome.range(-1f, 1f) * (1f - err) * 26f
+        val jitterY = outcome.range(-1f, 1f) * (1f - err) * 26f
+        val tx = (chosen.tx + jitterX).coerceIn(-4f, Pitch.LENGTH + 4f)
+        val ty = (chosen.ty + jitterY).coerceIn(-4f, Pitch.WIDTH + 4f)
+
         lastStriker = m
+        lastKind = chosen.kind
         strikeX = ball.x
         strikeY = ball.y
         restartSide = -1
-        Physics.strike(ball, tx - ball.x, ty - ball.y, mps, loft)
+        Physics.strike(ball, tx - ball.x, ty - ball.y, chosen.mps, chosen.loft)
         stillFor = 0f
+    }
+
+    /** What he MEANT, reported as an event. What happened is resolved later. */
+    private fun fireIntent(m: Man, o: Option) {
+        val attX = Pitch.attX(m.side, m.x)
+        when (o.kind) {
+            OptKind.THROUGH_BALL -> events.fire(Ev.THROUGH_BALL, m.side)
+            OptKind.SWITCH -> events.fire(Ev.PASS_SWITCH, m.side)
+            OptKind.CUT_BACK -> events.fire(Ev.CUT_BACK, m.side)
+            OptKind.CROSS ->
+                events.fire(if (attX > 88f) Ev.CROSS_BYLINE else Ev.CROSS_EARLY, m.side)
+            OptKind.CARRY -> events.fire(Ev.CARRY, m.side)
+            OptKind.CLEAR -> events.fire(Ev.CLEARANCE_HOOFED, m.side)
+            OptKind.SHOT -> {
+                shots[m.side]++
+                events.fire(
+                    if (Physics.dist(m.x, m.y, Pitch.absX(m.side, Pitch.LENGTH), Pitch.WIDTH * 0.5f) > 25f)
+                        Ev.SHOT_LONG_RANGE else Ev.SHOT_PLACED,
+                    m.side
+                )
+            }
+            OptKind.PASS_FEET, OptKind.PASS_SPACE -> Unit  // length decides these on arrival
+        }
     }
 
     /**
@@ -207,11 +261,20 @@ class MatchSim(
      */
     private fun resolveTouch(m: Man) {
         val s = lastStriker ?: return
+        val k = lastKind
         val d = Physics.dist(strikeX, strikeY, ball.x, ball.y)
-        events.fire(if (d < SHORT_PASS_M) Ev.PASS_SHORT else Ev.PASS_LONG, s.side)
-        if (m.side == s.side) events.fire(Ev.PASS_COMPLETED, s.side)
-        else events.fire(Ev.INTERCEPTION, m.side)
+
+        // A shot and a hoof are not passes, and counting them as such is how
+        // the predecessor got 36 crosses a match out of goal kicks.
+        val wasPass = k != OptKind.SHOT && k != OptKind.CLEAR && k != OptKind.CARRY
+        if (wasPass) {
+            events.fire(if (d < SHORT_PASS_M) Ev.PASS_SHORT else Ev.PASS_LONG, s.side)
+            if (m.side == s.side) events.fire(Ev.PASS_COMPLETED, s.side)
+            else events.fire(Ev.PASS_MISPLACED, s.side)
+        }
+        if (m.side != s.side) events.fire(Ev.INTERCEPTION, m.side)
         lastStriker = null
+        lastKind = null
     }
 
     /**
@@ -480,6 +543,35 @@ class MatchSim(
             if (Physics.dist(o.x, o.y, a.x + dx * t, a.y + dy * t) < 2.5f) return false
         }
         return true
+    }
+
+    /** How many of [side]'s men sit within [r] of a point. */
+    fun matesWithin(x: Float, y: Float, r: Float, side: Int): Int {
+        var n = 0
+        for (o in men) if (o.side == side && !o.isKeeper && Physics.dist(o.x, o.y, x, y) < r) n++
+        return n
+    }
+
+    /** How many opponents sit within [r] of a point. */
+    fun opponentsWithin(x: Float, y: Float, r: Float): Int {
+        var n = 0
+        for (o in men) if (Physics.dist(o.x, o.y, x, y) < r) n++
+        return n
+    }
+
+    /** How many opponents are close to the line from a man to a point. */
+    fun opponentsNearLine(a: Man, bx: Float, by: Float): Int {
+        val dx = bx - a.x
+        val dy = by - a.y
+        val len2 = dx * dx + dy * dy
+        if (len2 < 0.01f) return 0
+        var n = 0
+        for (o in men) {
+            if (o.side == a.side) continue
+            val t = (((o.x - a.x) * dx + (o.y - a.y) * dy) / len2).coerceIn(0f, 1f)
+            if (Physics.dist(o.x, o.y, a.x + dx * t, a.y + dy * t) < 2.5f) n++
+        }
+        return n
     }
 
     /** Metres to the nearest opponent. */

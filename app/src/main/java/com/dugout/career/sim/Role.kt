@@ -47,8 +47,20 @@ data class Role(
     val laneOut: Float = 0f,
     val leashM: Float = 12f,
     val chase: Float = 0.5f,
-    val maxAttX: Float = 999f
-)
+    val maxAttX: Float = 999f,
+    /**
+     * What he TRIES, as a multiplicative prior on each option's utility.
+     *
+     * This is the only channel by which a role reaches the decision layer, and
+     * it is a prior rather than a bonus on a dice roll — the design principle
+     * of §2 written as a type. A deep playmaker weighting the switch does not
+     * become better at switching; he attempts it more often, and whether it
+     * comes off is the execution model's business.
+     */
+    val intent: Map<OptKind, Float> = emptyMap()
+) {
+    fun intentFor(k: OptKind): Float = intent[k] ?: 1f
+}
 
 /**
  * Duty is a TRANSFORM, not a fourth table.
@@ -84,43 +96,72 @@ object Roles {
 
         // --- centre backs: three answers to the same question
         add(Role(RoleId.BALL_PLAYING_DEFENDER, bandIn = 0.55f, bandOut = 0.05f,
-            leashM = 11f, chase = 0.35f))
+            leashM = 11f, chase = 0.35f,
+            intent = mapOf(OptKind.THROUGH_BALL to 1.5f, OptKind.PASS_SPACE to 1.3f,
+                OptKind.CLEAR to 0.45f, OptKind.SHOT to 0.3f)))
         // follows the striker out of the line
         add(Role(RoleId.STOPPER, bandIn = 0.15f, bandOut = 0.40f,
-            leashM = 15f, chase = 0.85f))
+            leashM = 15f, chase = 0.85f,
+            intent = mapOf(OptKind.CLEAR to 2.2f, OptKind.PASS_FEET to 1.2f,
+                OptKind.THROUGH_BALL to 0.35f, OptKind.SHOT to 0.2f,
+                OptKind.CARRY to 0.4f)))
         // drops behind it and sweeps
         add(Role(RoleId.COVER, bandIn = 0.05f, bandOut = -0.40f,
-            leashM = 9f, chase = 0.25f))
+            leashM = 9f, chase = 0.25f,
+            intent = mapOf(OptKind.CLEAR to 1.8f, OptKind.THROUGH_BALL to 0.5f,
+                OptKind.CARRY to 0.6f, OptKind.SHOT to 0.2f)))
 
         // --- full backs: the lane change is the whole point
         add(Role(RoleId.OVERLAPPING_FB, bandIn = 1.35f, bandOut = -0.05f,
-            laneIn = -0.45f, laneOut = -0.15f, leashM = 18f, chase = 0.5f))
+            laneIn = -0.45f, laneOut = -0.15f, leashM = 18f, chase = 0.5f,
+            intent = mapOf(OptKind.CROSS to 2.0f, OptKind.CUT_BACK to 1.5f,
+                OptKind.SHOT to 0.4f)))
         add(Role(RoleId.INVERTED_FB, bandIn = 0.70f, bandOut = 0.10f,
-            laneIn = 1.15f, laneOut = 0.30f, leashM = 12f, chase = 0.5f))
+            laneIn = 1.15f, laneOut = 0.30f, leashM = 12f, chase = 0.5f,
+            intent = mapOf(OptKind.CROSS to 0.35f, OptKind.PASS_FEET to 1.3f,
+                OptKind.SWITCH to 1.4f)))
 
         // --- midfield
         add(Role(RoleId.HOLDING_MID, bandIn = 0.15f, bandOut = -0.15f,
-            leashM = 9f, chase = 0.65f, maxAttX = 54f))
+            leashM = 9f, chase = 0.65f, maxAttX = 54f,
+            intent = mapOf(OptKind.PASS_FEET to 1.5f, OptKind.SHOT to 0.15f,
+                OptKind.THROUGH_BALL to 0.6f, OptKind.CARRY to 0.5f)))
         add(Role(RoleId.BOX_TO_BOX, bandIn = 1.25f, bandOut = -0.35f,
-            leashM = 21f, chase = 0.85f))
+            leashM = 21f, chase = 0.85f,
+            intent = mapOf(OptKind.CARRY to 1.9f, OptKind.PASS_SPACE to 1.3f,
+                OptKind.SHOT to 1.2f, OptKind.CLEAR to 0.5f)))
         add(Role(RoleId.DEEP_PLAYMAKER, bandIn = 0.30f, bandOut = -0.25f,
-            leashM = 13f, chase = 0.40f))
+            leashM = 13f, chase = 0.40f,
+            intent = mapOf(OptKind.SWITCH to 2.2f, OptKind.THROUGH_BALL to 1.4f,
+                OptKind.CLEAR to 0.4f)))
         add(Role(RoleId.ADVANCED_PLAYMAKER, bandIn = 0.85f, bandOut = -0.55f,
-            laneIn = 0.45f, leashM = 15f, chase = 0.40f))
+            laneIn = 0.45f, leashM = 15f, chase = 0.40f,
+            intent = mapOf(OptKind.THROUGH_BALL to 2.2f, OptKind.PASS_SPACE to 1.5f,
+                OptKind.CLEAR to 0.3f)))
 
         // --- wide forwards
         add(Role(RoleId.TOUCHLINE_WINGER, bandIn = 0.75f, bandOut = -0.60f,
-            laneIn = -0.55f, laneOut = -0.25f, leashM = 13f, chase = 0.35f))
+            laneIn = -0.55f, laneOut = -0.25f, leashM = 13f, chase = 0.35f,
+            intent = mapOf(OptKind.CROSS to 2.4f, OptKind.CUT_BACK to 1.6f,
+                OptKind.SWITCH to 0.5f, OptKind.SHOT to 0.6f)))
         add(Role(RoleId.INSIDE_FORWARD, bandIn = 0.85f, bandOut = -0.55f,
-            laneIn = 1.25f, laneOut = 0.45f, leashM = 15f, chase = 0.40f))
+            laneIn = 1.25f, laneOut = 0.45f, leashM = 15f, chase = 0.40f,
+            intent = mapOf(OptKind.SHOT to 2.1f, OptKind.CARRY to 1.4f,
+                OptKind.CROSS to 0.4f)))
 
         // --- centre forwards
         add(Role(RoleId.TARGET_MAN, bandIn = 0.45f, bandOut = -0.70f,
-            leashM = 10f, chase = 0.30f))
+            leashM = 10f, chase = 0.30f,
+            intent = mapOf(OptKind.PASS_FEET to 1.6f, OptKind.SHOT to 1.3f,
+                OptKind.THROUGH_BALL to 0.5f)))
         add(Role(RoleId.POACHER, bandIn = 0.90f, bandOut = -0.95f,
-            leashM = 8f, chase = 0.15f))
+            leashM = 8f, chase = 0.15f,
+            intent = mapOf(OptKind.SHOT to 2.6f, OptKind.PASS_FEET to 0.6f,
+                OptKind.SWITCH to 0.2f, OptKind.CLEAR to 0.2f)))
         // drops OUT of the line and leaves the centre empty
         add(Role(RoleId.FALSE_NINE, bandIn = -0.65f, bandOut = -0.85f,
-            leashM = 17f, chase = 0.45f))
+            leashM = 17f, chase = 0.45f,
+            intent = mapOf(OptKind.PASS_FEET to 1.8f, OptKind.THROUGH_BALL to 1.6f,
+                OptKind.SHOT to 0.5f, OptKind.CROSS to 0.3f, OptKind.CLEAR to 0.25f)))
     }
 }

@@ -1,7 +1,10 @@
 package harness
 
 import com.dugout.career.sim.MatchSim
+import com.dugout.career.sim.Decide
+import com.dugout.career.sim.OptKind
 import com.dugout.career.sim.Pitch
+import kotlin.math.abs
 
 /**
  * OPTIONCENSUS, the part of it that exists at step 4.
@@ -36,7 +39,19 @@ private val PRESS_NAME = arrayOf("none >8m", "closed 4-8m", "pressed <4m")
 
 private class Cell {
     val counts = ArrayList<Int>()
+    val kinds = IntArray(OptKind.entries.size)
+    var argmax = 0
+    var total = 0
     fun add(n: Int) { counts.add(n) }
+    fun chose(k: OptKind, wasArgmax: Boolean) {
+        kinds[k.ordinal]++; total++; if (wasArgmax) argmax++
+    }
+    fun kindShares(): DoubleArray {
+        val out = DoubleArray(kinds.size)
+        if (total == 0) return out
+        for (i in kinds.indices) out[i] = kinds[i].toDouble() / total
+        return out
+    }
     val n: Int get() = counts.size
     val median: Double get() {
         if (counts.isEmpty()) return 0.0
@@ -56,6 +71,21 @@ fun main(args: Array<String>) {
 
     for (i in 0 until matches) {
         val sim = MatchSim(1000L + i)
+        sim.onChoice = { m, chosen, _, pressure ->
+            val ax = Pitch.attX(m.side, m.x)
+            val zone = when {
+                ax < Pitch.LENGTH / 3f -> 0
+                ax < 2f * Pitch.LENGTH / 3f -> 1
+                else -> 2
+            }
+            val press = when {
+                pressure > 8f -> 0
+                pressure > 4f -> 1
+                else -> 2
+            }
+            grid[zone][press].chose(chosen.kind, false)
+            all.chose(chosen.kind, false)
+        }
         sim.onCarry = { m, options, pressure ->
             val ax = Pitch.attX(m.side, m.x)
             val zone = when {
@@ -95,13 +125,52 @@ fun main(args: Array<String>) {
         all.n, all.median, all.starved))
     println()
 
+    // ------------------------------------------------- the conditional bars
+    println()
+    println("CHOSEN OPTION KINDS by cell — the conditional test of §5")
+    println("Within a cell the distribution must be CONCENTRATED (low entropy);")
+    println("between cells it must be FAR APART. Variety and noise share a histogram,")
+    println("so only the split table can tell them apart.")
+    println()
+    println(String.format("%-14s %-14s %9s %10s", "zone", "pressure", "entropy", "top kind"))
+    println("-".repeat(52))
+    val populated = ArrayList<Pair<String, DoubleArray>>()
+    val entropies = ArrayList<Double>()
+    for (z in 0 until ZONES) for (p in 0 until PRESSURES) {
+        val c = grid[z][p]
+        if (c.total < 200) continue
+        val h = Decide.normalisedEntropy(c.kinds)
+        entropies.add(h)
+        populated.add("${ZONE_NAME[z]}/${PRESS_NAME[p]}" to c.kindShares())
+        val top = OptKind.entries[c.kinds.indices.maxByOrNull { c.kinds[it] }!!]
+        println(String.format("%-14s %-14s %9.2f %10s", ZONE_NAME[z], PRESS_NAME[p], h, top.name))
+    }
+
+    val tvs = ArrayList<Double>()
+    for (i in populated.indices) for (j in i + 1 until populated.size) {
+        var d = 0.0
+        val a = populated[i].second
+        val b = populated[j].second
+        for (k in a.indices) d += abs(a[k] - b[k])
+        tvs.add(d / 2.0)
+    }
+    val medianTv = if (tvs.isEmpty()) 0.0 else tvs.sorted()[tvs.size / 2]
+    val medianH = if (entropies.isEmpty()) 0.0 else entropies.sorted()[entropies.size / 2]
+
+    println()
     val medianOk = all.median >= 6.0
     val starvedOk = all.starved <= 10.0
-    println("§5 bar — median option-set size >= 6:      ${if (medianOk) "PASS" else "FAIL"} (${all.median})")
+    val tvOk = medianTv >= 0.30
+    val hOk = medianH <= 0.60
+    println("§5 bar — median option-set size >= 6:         ${if (medianOk) "PASS" else "FAIL"} (${all.median})")
     println("§5 bar — decisions offered <=2 options <=10%: ${if (starvedOk) "PASS" else "FAIL"} " +
         String.format("(%.1f%%)", all.starved))
+    println("§5 bar — median between-cell TV >= 0.30:      ${if (tvOk) "PASS" else "FAIL"} " +
+        String.format("(%.2f)", medianTv))
+    println("§5 bar — median within-cell entropy <= 0.60:  ${if (hOk) "PASS" else "FAIL"} " +
+        String.format("(%.2f)", medianH))
     println()
-    if (medianOk && starvedOk) {
+    if (medianOk && starvedOk && tvOk && hOk) {
         println("The off-ball layer is offering choices. The decision layer may be tuned")
         println("against these cells once it exists — the other §5 bars need a chooser.")
     } else {

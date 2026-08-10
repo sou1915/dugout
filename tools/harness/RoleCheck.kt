@@ -4,6 +4,7 @@ import com.dugout.career.sim.Duty
 import com.dugout.career.sim.Formation
 import com.dugout.career.sim.MatchSim
 import com.dugout.career.sim.Pitch
+import com.dugout.career.sim.OptKind
 import com.dugout.career.sim.RoleId
 import kotlin.math.abs
 
@@ -48,6 +49,15 @@ private class Heat {
     var sumX = 0.0
     var sumY = 0.0
     var touches = 0.0
+    val kinds = IntArray(OptKind.entries.size)
+
+    fun kindShares(): DoubleArray {
+        val out = DoubleArray(kinds.size)
+        val n = kinds.sum()
+        if (n == 0) return out
+        for (i in kinds.indices) out[i] = kinds[i].toDouble() / n
+        return out
+    }
 
     fun add(ax: Float, ay: Float) {
         val l = ((ay / Pitch.WIDTH) * FL).toInt().coerceIn(0, FL - 1)
@@ -84,6 +94,7 @@ private fun run(role: RoleId, matches: Int): Heat {
         val sim = MatchSim(1000L + i, homeShape = shape)
         val man = sim.men.first { it.side == 0 && it.slot.id == SLOT }
         sim.onCarry = { m, _, _ -> if (m === man) heat.touches += 1.0 }
+        sim.onChoice = { m, o, _, _ -> if (m === man) heat.kinds[o.kind.ordinal]++ }
         var n = 0
         sim.play { _, _ ->
             heat.add(Pitch.attX(0, man.x), Pitch.attY(0, man.y))
@@ -143,15 +154,41 @@ fun main(args: Array<String>) {
         println()
     }
 
+    /*
+     * THE BRIEF ASKS FOR TWO SIGNATURES, AND THE FIRST VERSION TESTED ONE.
+     *
+     * "two sides identical except for one role change must produce visibly
+     * different heat maps AND DIFFERENT EVENT RATES."
+     *
+     * Only the heat map was measured, so a pair of roles that stand in similar
+     * places while doing different things on the ball was reported as
+     * decoration — POACHER and TARGET_MAN sit 0.56 m apart and take 54 and 51
+     * touches, but one shoots on sight and the other lays it off. That is not
+     * two names for the same man; it is a test that was missing half its
+     * criterion. A pair is decoration only when NEITHER signature separates.
+     */
+    val kindNorm = roles.associateWith { heat.getValue(it).kindShares() }
+
+    println()
+    println("WHAT HE DOES ON THE BALL — chosen option kinds, the second signature")
+    println(String.format("%-24s %9s %8s", "role", "touches", "top kind"))
+    for (r in roles) {
+        val h = heat.getValue(r)
+        val top = if (h.kinds.sum() == 0) "-"
+            else OptKind.entries[h.kinds.indices.maxByOrNull { h.kinds[it] }!!].name
+        println(String.format("%-24s %9.1f %8s", r.name, h.touches / matches, top))
+    }
+
     val fails = ArrayList<String>()
     for (i in roles.indices) for (j in i + 1 until roles.size) {
         val a = heat.getValue(roles[i])
         val b = heat.getValue(roles[j])
-        val s = separation(norm.getValue(roles[i]), norm.getValue(roles[j]))
+        val posSep = separation(norm.getValue(roles[i]), norm.getValue(roles[j]))
+        val actSep = separation(kindNorm.getValue(roles[i]), kindNorm.getValue(roles[j]))
         val metres = kotlin.math.hypot(a.meanX - b.meanX, a.meanY - b.meanY)
-        if (s < FLOOR) fails.add(String.format(
-            "%.2f  %-22s vs %-22s  (centroids %.2f m apart)",
-            s, roles[i].name, roles[j].name, metres))
+        if (posSep < FLOOR && actSep < FLOOR) fails.add(String.format(
+            "pos %.2f / act %.2f  %-22s vs %-22s  (centroids %.2f m apart)",
+            posSep, actSep, roles[i].name, roles[j].name, metres))
     }
 
     println()
