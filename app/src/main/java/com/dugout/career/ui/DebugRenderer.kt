@@ -33,7 +33,17 @@ object DebugRenderer {
     fun render(
         men: List<Man>, ball: Ball,
         width: Int = 1050, height: Int = 720,
-        caption: String = ""
+        caption: String = "",
+        /**
+         * Men a COLLECTIVE act has committed, ringed.
+         *
+         * A press is three men leaving their stations at the same instant, and
+         * that is either visible in a picture or it is not happening. Without
+         * the ring the frame shows three men who happen to be running the same
+         * way, which is exactly the ambiguity the brief says a debug renderer
+         * exists at step 2 to remove.
+         */
+        committed: List<Man> = emptyList()
     ): Bitmap {
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
@@ -122,6 +132,16 @@ object DebugRenderer {
             p.textSize = 9f
             p.textAlign = Paint.Align.CENTER
             c.drawText(m.slot.id.toString(), px(m.x), py(m.y) + 3.2f, p)
+        }
+
+        // men a collective act has committed — ringed, so a press reads as a
+        // press and not as three men who happen to be running the same way
+        if (committed.isNotEmpty()) {
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 2.2f
+            p.color = Color.rgb(255, 235, 90)
+            for (m in committed) c.drawCircle(px(m.x), py(m.y), 11f, p)
+            p.style = Paint.Style.FILL
         }
 
         // the ball, with its height shown as a ring so a lofted ball is not a

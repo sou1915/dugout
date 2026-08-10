@@ -80,6 +80,10 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     TACKLE_SLIDING(EvGroup.DEFENDING),
     TACKLE_LAST_DITCH(EvGroup.DEFENDING),
     RECOVERY_RUN(EvGroup.DEFENDING),
+    /** The team mind committed several men at once. A collective act, not a man's. */
+    PRESS_TRIGGERED(EvGroup.DEFENDING, wired = true),
+    /** The ball changed hands while that press was live. */
+    PRESS_WON(EvGroup.DEFENDING, wired = true),
     GOAL_LINE_CLEARANCE(EvGroup.DEFENDING),
     OFFSIDE_TRAP_SPRUNG(EvGroup.DEFENDING),
     OFFSIDE(EvGroup.DEFENDING),

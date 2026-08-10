@@ -111,6 +111,14 @@ class MatchSim(
 
     val ball = Ball()
     val men = ArrayList<Man>(22)
+
+    /**
+     * ONE MIND PER SIDE, ABOVE THE ELEVEN.
+     *
+     * It never chooses an act for anybody — it changes the weight of an option
+     * and it hands off-ball men somewhere to be. See [TeamMind].
+     */
+    @JvmField val teams = arrayOf(TeamMind(0), TeamMind(1))
     @JvmField val events = EventLog()
 
     /** [side][0 = without the ball, 1 = with it][slot] */
@@ -139,6 +147,9 @@ class MatchSim(
 
     private val rest = FloatArray(3)
     private var claimant: Man? = null
+
+    /** Who is next to touch it. What a press aims at. */
+    val nextOnBall: Man? get() = claimant
     private var stillFor = 0f
     private var ticks = 0
     private var wasMoving = false
@@ -146,6 +157,7 @@ class MatchSim(
     /** Deepest compiled anchor per side — where the defensive line starts. */
     private val deepestAx = FloatArray(2)
 
+    private val pressBuf = FloatArray(2)
     private val supportX = FloatArray(22)
     private val supportY = FloatArray(22)
     private val supportSet = BooleanArray(22)
@@ -180,6 +192,7 @@ class MatchSim(
     private var pendingKind: OptKind? = null
     private var pendingP = 0f
     private var pendingSide = -1
+    private var pendingY = 0f
 
     /**
      * Resolve the open prediction, once. A second call before another strike
@@ -190,6 +203,15 @@ class MatchSim(
         val k = pendingKind ?: return
         pendingKind = null
         onOutcome?.invoke(k, pendingP, worked)
+
+        // The same fact, filed twice: once as a man's prediction coming off,
+        // once as the side's record of a channel. The second is the only thing
+        // a team knows that no player in it can see.
+        if (pendingSide in 0..1) {
+            val t = teams[pendingSide]
+            t.noteChannel(draw, t.channelOf(pendingSide, pendingY), worked)
+            teams[1 - pendingSide].pressResolved(this, worked.not(), clock)
+        }
     }
 
     /** A dead ball belongs to one side until it is put back in play. */
@@ -312,6 +334,7 @@ class MatchSim(
         pendingKind = chosen.kind
         pendingP = chosen.pSuccess
         pendingSide = m.side
+        pendingY = chosen.ty
 
         fireIntent(m, chosen)
 
@@ -682,7 +705,10 @@ class MatchSim(
              */
             var tAx: Float
             if (possessionSide >= 0 && possessionSide != m.side) {
-                val lineAx = min(deepestAx[m.side], ballAx - DEFEND_STANDOFF).coerceAtLeast(3f)
+                // The team's disposition moves the whole line, which is the
+                // one thing a side does together without deciding to.
+                val lineAx = (min(deepestAx[m.side], ballAx - DEFEND_STANDOFF) +
+                    teams[m.side].lineShift).coerceAtLeast(3f)
                 val squeeze = (ballAx / 42f).coerceIn(0.28f, 1f)
                 val rel = (ax - deepestAx[m.side]) * squeeze
                 tAx = (lineAx + rel).coerceAtMost(ballAx + GOAL_SIDE_ALLOWANCE)
@@ -693,6 +719,19 @@ class MatchSim(
             val tAy = (ay + dy).coerceIn(1.5f, Pitch.WIDTH - 1.5f)
             var wantX = Pitch.absX(m.side, tAx)
             var wantY = Pitch.absY(m.side, tAy)
+
+            /*
+             * A COLLECTIVE ACT OUTRANKS THE SHAPE, AND ONLY THE SHAPE.
+             *
+             * A pressing man leaves his station — that is the whole point of a
+             * press, and a press that respected the block would be indis-
+             * tinguishable from not pressing. It is still only an OFF-BALL
+             * target: the man on the ball is untouched by any of this.
+             */
+            if (teams[m.side].pressTargetFor(m, pressBuf)) {
+                m.aim(pressBuf[0], pressBuf[1], 0.9f)
+                continue
+            }
 
             val i = men.indexOf(m)
             if (supportSet[i]) {
@@ -715,7 +754,15 @@ class MatchSim(
         // rather than once a frame. Recomputing it every tick costs ten million
         // physics steps a match and buys three hundredths of a second of
         // accuracy in where a man is heading.
-        if (ticks % CLAIM_EVERY == 0) { updateClaim(); updateSupport() }
+        for (t in teams) t.observe(this)
+        if (ticks % TeamMind.READ_EVERY == 0) for (t in teams) t.read(this)
+
+        if (ticks % CLAIM_EVERY == 0) {
+            updateClaim(); updateSupport()
+            // A press is decided at claim cadence, because what it aims at is
+            // whoever is about to receive the ball.
+            for (t in teams) t.considerPress(this, claimant, clock)
+        }
         ticks++
         updateTargets()
 

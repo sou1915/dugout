@@ -90,6 +90,13 @@ jobs:
       - name: MindCheck — the percentages, the memory, the replay
         run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.MindCheckKt 30
 
+      # The collective mind is three systems, so it is measured as three. The
+      # gate inside it is the strict one: with all three switched off, 200
+      # matches must hash to what they hashed before any of it existed. A layer
+      # that does something while disabled makes every other row a confound.
+      - name: TeamCheck — the collective mind, one layer at a time
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.TeamCheckKt 30
+
       # Does a tactical setting move the football? A dead lever prints its own
       # verdict here rather than being discovered months later in a sweep.
       - name: ShapeCheck — line height and block width
@@ -129,6 +136,10 @@ jobs:
         run: |
           java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.FilmKt build/film 1000
           java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.RoleFilmKt build/film
+          # A press has to be VISIBLE, not just counted. Five frames half a
+          # second apart, committed men ringed. This step fails if no press
+          # ever fires in a whole match.
+          java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.PressFilmKt build/film 1000
 
       - uses: actions/upload-artifact@v4
         with:

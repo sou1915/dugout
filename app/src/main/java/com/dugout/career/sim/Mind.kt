@@ -219,8 +219,22 @@ class Mind(@JvmField val man: Man) {
             o.risk = (1f - p) *
                 Value.turnoverCost(Pitch.attX(side, o.tx), o.ty) * RISK_WEIGHT
 
-            // Tactics enter here and nowhere else.
-            o.conformance = man.role.intentFor(o.kind)
+            /*
+             * TACTICS ENTER HERE AND NOWHERE ELSE — now from two directions.
+             *
+             * His ROLE is what he is. His TEAM is what the side has decided
+             * about this afternoon: how direct it wants to be, and which
+             * channel has been working. Both are priors on the choice and
+             * neither can reach into the act itself; a team mind that could
+             * substitute an act would make his percentages describe nothing.
+             *
+             * They multiply, which is what independent priors do, and the
+             * product is bounded because each factor is bounded.
+             */
+            val team = sim.teams[side]
+            o.conformance = man.role.intentFor(o.kind) *
+                team.intentFor(o.kind) *
+                team.channelBias(draw, team.channelOf(side, o.ty))
         }
 
         val chosen = pick(options, pressure, draw)
