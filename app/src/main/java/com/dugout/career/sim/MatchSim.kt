@@ -342,6 +342,48 @@ class MatchSim(
      * everything else about passing has been guesswork until this number
      * exists.
      */
+    /**
+     * ONE PASS, END TO END. The trace, not another hypothesis.
+     *
+     * Two measurements of the same strike disagree: an isolated probe of the
+     * flight physics is accurate to under a metre, and the match reports 10.21
+     * m between where the ball stopped and where it was aimed. Both cannot be
+     * true, so one of them is lying, and after four wrong causal guesses in one
+     * session the way to find out is not a fifth guess.
+     *
+     * Every number that goes into a delivery is recorded here and printed by
+     * PassTrace, worst first. The three that matter are `solvedFor` — the
+     * distance the pace was computed for — `needed`, the distance the ball
+     * actually had to cover from where it lay, and `travelled`. If those three
+     * do not account for the gap, the gap is in the measurement itself, and
+     * that is a finding too.
+     */
+    class Delivery {
+        @JvmField var carrierX = 0f
+        @JvmField var carrierY = 0f
+        /** Where the ball lay when it was struck — NOT the same as the man. */
+        @JvmField var ballX = 0f
+        @JvmField var ballY = 0f
+        /** The option's target, before delivery error. */
+        @JvmField var aimX = 0f
+        @JvmField var aimY = 0f
+        /** Where it was actually struck at, after error. */
+        @JvmField var shotX = 0f
+        @JvmField var shotY = 0f
+        @JvmField var mps = 0f
+        @JvmField var loft = 0f
+        @JvmField var restX = 0f
+        @JvmField var restY = 0f
+        @JvmField var manX = 0f
+        @JvmField var manY = 0f
+        @JvmField var kind = ""
+    }
+
+    private val delivery = Delivery()
+
+    /** Set by a harness. Fires once per intended pass, when it resolves. */
+    @JvmField var onDelivery: ((Delivery) -> Unit)? = null
+
     @JvmField var ballVsAimSum = 0.0
     @JvmField var aimVsManSum = 0.0
     @JvmField var splitCount = 0
@@ -500,6 +542,20 @@ class MatchSim(
         lastReceiver = chosen.receiver
         aimX = tx
         aimY = ty
+        if (onDelivery != null) {
+            delivery.carrierX = m.x; delivery.carrierY = m.y
+            // ball.x, NOT strikeX — strikeX is assigned two lines below this,
+            // so reading it here recorded where the PREVIOUS ball was struck.
+            // That one stale field read 14.03 m and I believed it: it looked
+            // exactly like a man kicking a ball he was nowhere near, and I
+            // wrote the fix for that before checking the instrument. The
+            // instrument was the thing that was broken.
+            delivery.ballX = ball.x; delivery.ballY = ball.y
+            delivery.aimX = chosen.tx; delivery.aimY = chosen.ty
+            delivery.shotX = tx; delivery.shotY = ty
+            delivery.mps = chosen.mps; delivery.loft = chosen.loft
+            delivery.kind = chosen.kind.name
+        }
         strikeX = ball.x
         strikeY = ball.y
         restartSide = -1
@@ -683,6 +739,12 @@ class MatchSim(
             ballVsAimSum += Physics.dist(ball.x, ball.y, aimX, aimY).toDouble()
             aimVsManSum += Physics.dist(aimX, aimY, t.x, t.y).toDouble()
             splitCount++
+
+            onDelivery?.let { cb ->
+                delivery.restX = ball.x; delivery.restY = ball.y
+                delivery.manX = t.x; delivery.manY = t.y
+                cb(delivery)
+            }
         }
         if (m.side != s.side) {
             /*
@@ -1029,8 +1091,30 @@ class MatchSim(
                     strikeOn(c)
                 }
             } else if (stillFor > 6f) {
+                /*
+                 * THE DEADLOCK BREAKER WAS LETTING A MAN KICK A BALL HE WAS
+                 * NOWHERE NEAR. This is the whole of the missing 10 metres.
+                 *
+                 * If nobody has reached the ball in six seconds, somebody has
+                 * to play it or the match stops. The old line handed it to the
+                 * claimant WHEREVER HE STOOD — and then [strikeOn] generated
+                 * his options from HIS position while [Physics.strike] launched
+                 * the ball from the BALL's position. PassTrace measured the gap
+                 * between those two points at 14.39 m on average.
+                 *
+                 * Every consequence followed from that one line. The pace was
+                 * solved for carrier -> target and the ball had to cover ball
+                 * -> target, 4.96 m further on average; the direction was wrong
+                 * by the same triangle; and "the ball does not stop where it
+                 * was aimed" read 10.21 m while an isolated probe of the very
+                 * same physics was accurate to under a metre. Both were true.
+                 * They were describing different strikes.
+                 *
+                 * He has walked over and picked it up. Say so.
+                 */
                 val f = c ?: men[0]
                 resolveTouch(f)
+                ball.place(f.x, f.y)
                 strikeOn(f)
             }
         }

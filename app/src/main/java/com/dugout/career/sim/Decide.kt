@@ -174,6 +174,32 @@ object Decide {
              * on the pace, so it is a fixed point. Two iterations settle it to
              * well under a metre — this is a pass, not an orbital insertion.
              */
+            /*
+             * LEAD HIM TO WHERE HE IS GOING, NOT WHERE HE IS POINTING.
+             *
+             * The lead used to be his position plus his VELOCITY over the
+             * flight time, which assumes he keeps running in a straight line —
+             * and he does not, because every man in this engine is running an
+             * arrive-by model toward a target that slides with the ball.
+             *
+             * Once the strike physics was fixed, this became the whole of the
+             * remaining error: the ball landed 1.5 m from where it was aimed
+             * and 5.9 m from the man, so the aim itself was the problem.
+             *
+             * TESTED, AND IT RETURNED NOTHING. Aiming at his declared target
+             * instead of his velocity moved "aim vs where the man was" from
+             * 5.93 m to 6.02 m over 40 matches — no change. The reason is that
+             * his target is not a destination: it is recomputed every tick and
+             * slides with the ball, so it predicts his position in a second's
+             * time no better than his current heading does.
+             *
+             * And a warning for whoever tries the third version. "aim vs where
+             * the man was" is measured when the ball is TOUCHED, which is when
+             * it has come to rest and somebody has walked to it — possibly
+             * seconds after it passed the man it was aimed at. Part of that
+             * 6 m is him having moved on afterwards, not the pass being wrong.
+             * The measurement needs fixing before the model does.
+             */
             var mps = speedFor(d, loft)
             var ax = t.x
             var ay = t.y

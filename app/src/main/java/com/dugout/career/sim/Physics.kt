@@ -43,6 +43,45 @@ object Physics {
     /** Below this it has stopped. */
     private const val AT_REST = 0.25f
 
+    /**
+     * HOW MUCH HORIZONTAL SPEED A BOUNCE COSTS — proportional to the landing.
+     *
+     * [BOUNCE_KEEP] used to be applied flat: every contact with the ground took
+     * 22% of the ball's pace, however gently it came down. At a 0.1 s tick a
+     * ball with a small loft lands, hops a few centimetres and lands again — up
+     * to ten times a second — and 0.78^10 is 8%. The ball simply died.
+     *
+     * PassTrace found it by act and a probe pinned it exactly. Distance was NOT
+     * MONOTONIC IN SPEED, which no ball has ever done:
+     *
+     *   loft 1.0   speed 14 ->  16.16 m
+     *              speed 16 ->   4.31 m    hit it harder, it goes a quarter as far
+     *              speed 20 ->   5.40 m
+     *              speed 22 ->  32.90 m
+     *
+     * The cliff is the `vz < -0.6` threshold: below it the ball settles and
+     * rolls, above it it starts bouncing and every bounce robs it. So
+     * PASS_SPACE and THROUGH_BALL, struck at loft 1.0, finished 10.6 m and
+     * 13.5 m SHORT of where they were aimed — while a cross at loft 14 and a
+     * switch at loft 11, both well clear of the cliff, were accurate to under a
+     * metre. That split by act is what pointed at loft rather than at distance.
+     *
+     * It also broke [solveStrike] without either being wrong on its own terms:
+     * bisection assumes the function it searches is monotonic, and given a
+     * cliff it converges confidently on nonsense. That is why the solver
+     * returned the SAME 21.83 m/s for a 10 m pass, a 20 m pass and a 32 m one.
+     *
+     * A gentle landing now costs almost nothing and a thumping one costs the
+     * full 22%, which is continuous and is what a ball does.
+     */
+    private fun bounceKeep(vz: Float): Float {
+        val severity = (-vz / HARD_LANDING).coerceIn(0f, 1f)
+        return 1f - (1f - BOUNCE_KEEP) * severity
+    }
+
+    /** Downward speed at which a bounce costs the full [BOUNCE_KEEP], m/s. */
+    private const val HARD_LANDING = 5f
+
     fun dist(ax: Float, ay: Float, bx: Float, by: Float): Float =
         hypot((ax - bx).toDouble(), (ay - by).toDouble()).toFloat()
 
@@ -59,9 +98,10 @@ object Physics {
             if (b.height <= 0f) {
                 b.height = 0f
                 if (b.vz < -0.6f) {
+                    val keepH = bounceKeep(b.vz)
                     b.vz = -b.vz * RESTITUTION
-                    b.vx *= BOUNCE_KEEP
-                    b.vy *= BOUNCE_KEEP
+                    b.vx *= keepH
+                    b.vy *= keepH
                 } else {
                     b.vz = 0f
                 }
@@ -163,8 +203,13 @@ object Physics {
     private const val D_STEP = 1f
     private const val D_N = 61          // 2 m .. 62 m
     private const val L_LO = 0f
-    private const val L_STEP = 1f
-    private const val L_N = 25          // loft 0 .. 24
+    /**
+     * Half-metre loft rows. The function is wobbly between bounce regimes, so
+     * interpolating across a whole unit of loft cost up to 4.6 m on the 1.5
+     * that every short pass uses. Rows are cheap; a wrong pass is not.
+     */
+    private const val L_STEP = 0.5f
+    private const val L_N = 49          // loft 0 .. 24
     /** The engine's tick. MatchSim.DT, repeated here so Physics owns no import. */
     private const val SOLVE_DT = 0.1f
     private const val SOLVE_LO = 4f
@@ -187,19 +232,34 @@ object Physics {
      * physics it is solving is fitting a curve again with extra steps.
      */
     private fun bisect(d: Float, loft: Float): Float {
+        /*
+         * SCANNED, NOT BISECTED — because the function is not monotonic.
+         *
+         * Making the bounce proportional turned a 16 m cliff into a 4 m wobble,
+         * but a wobble is still enough to send a bisection to the wrong root,
+         * and a solver that silently depends on an assumption nobody checks is
+         * how this bug survived in the first place. A scan needs no assumption
+         * at all: try every pace, keep the one that lands nearest. It costs 140
+         * short flights per grid cell, once, at class load.
+         */
         val probe = Ball()
-        var lo = SOLVE_LO
-        var hi = SOLVE_HI
-        repeat(22) {
-            val mid = (lo + hi) * 0.5f
+        var best = SOLVE_LO
+        var bestErr = Float.MAX_VALUE
+        var v = SOLVE_LO
+        while (v <= SOLVE_HI) {
             probe.place(0f, 0f)
-            strike(probe, 1f, 0f, mid, loft)
+            strike(probe, 1f, 0f, v, loft)
             var steps = 0
             while (stepBall(probe, SOLVE_DT) && steps++ < 400) { /* fly */ }
-            if (probe.x < d) lo = mid else hi = mid
+            val err = abs(probe.x - d)
+            if (err < bestErr) { bestErr = err; best = v }
+            v += SCAN_STEP
         }
-        return (lo + hi) * 0.5f
+        return best
     }
+
+    /** Pace resolution of the scan, m/s. */
+    private const val SCAN_STEP = 0.2f
 
     fun restPoint(b: Ball, out: FloatArray) {
         var x = b.x; var y = b.y
@@ -215,8 +275,10 @@ object Physics {
                 h += vz * dt
                 if (h <= 0f) {
                     h = 0f
-                    if (vz < -0.6f) { vz = -vz * RESTITUTION; vx *= BOUNCE_KEEP; vy *= BOUNCE_KEEP }
-                    else vz = 0f
+                    if (vz < -0.6f) {
+                        val keepH = bounceKeep(vz)
+                        vz = -vz * RESTITUTION; vx *= keepH; vy *= keepH
+                    } else vz = 0f
                 }
             }
             val keep = max(0f, 1f - (if (h > 0.12f) AIR_DRAG else ROLL_DRAG) * dt)
