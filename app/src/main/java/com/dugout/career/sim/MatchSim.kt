@@ -64,6 +64,9 @@ class MatchSim(
 
         const val CROSSBAR_M = 2.44f
 
+        /** Half the width a body actually blocks, metres. */
+        const val BLOCK_HALF_WIDTH = 0.75f
+
         /** How far across his line a keeper gets to a struck ball, metres. */
         const val GK_REACH = 2.5f
         /** A ball along the ground is easier to go down to. */
@@ -242,6 +245,29 @@ class MatchSim(
         val jitterY = outcome.range(-1f, 1f) * err * 26f
         val tx = (chosen.tx + jitterX).coerceIn(-4f, Pitch.LENGTH + 4f)
         val ty = (chosen.ty + jitterY).coerceIn(-4f, Pitch.WIDTH + 4f)
+
+        // A BLOCK IS GEOMETRY. If a defender's body is in the line of the
+        // shot, it hits him — and the ball carries on from there as a loose
+        // one, which is where rebounds come from.
+        if (chosen.kind == OptKind.SHOT) {
+            val blocker = nearestOnLine(m, chosen.tx, chosen.ty)
+            if (blocker != null) {
+                events.fire(Ev.SHOT_BLOCKED, blocker.side)
+                ball.place(blocker.x, blocker.y)
+                Physics.strike(
+                    ball,
+                    outcome.range(-1f, 1f), outcome.range(-1f, 1f),
+                    outcome.range(4f, 11f), outcome.range(0f, 14f)
+                )
+                lastStriker = blocker
+                lastKind = OptKind.CLEAR
+                strikeX = ball.x
+                strikeY = ball.y
+                restartSide = -1
+                stillFor = 0f
+                return
+            }
+        }
 
         lastStriker = m
         lastKind = chosen.kind
@@ -598,6 +624,28 @@ class MatchSim(
         var n = 0
         for (o in men) if (Physics.dist(o.x, o.y, x, y) < r) n++
         return n
+    }
+
+    /** The opponent nearest the shooter that stands in the line of the ball. */
+    fun nearestOnLine(a: Man, bx: Float, by: Float): Man? {
+        val dx = bx - a.x
+        val dy = by - a.y
+        val len2 = dx * dx + dy * dy
+        if (len2 < 0.01f) return null
+        var best: Man? = null
+        var bestT = Float.MAX_VALUE
+        for (o in men) {
+            if (o.side == a.side) continue
+            val t = (((o.x - a.x) * dx + (o.y - a.y) * dy) / len2).coerceIn(0f, 1f)
+            if (t <= 0.02f || t >= 0.98f) continue
+            // A man is about half a metre wide with a leg out. 1.5 m was a
+            // body three metres across and it blocked 84% of all shots against
+            // a real 30%, taking the score to 0.65 a game.
+            if (Physics.dist(o.x, o.y, a.x + dx * t, a.y + dy * t) < BLOCK_HALF_WIDTH && t < bestT) {
+                bestT = t; best = o
+            }
+        }
+        return best
     }
 
     /** How many opponents are close to the line from a man to a point. */

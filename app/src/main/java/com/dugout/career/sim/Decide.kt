@@ -219,7 +219,18 @@ object Decide {
              *     EV = (1 - pFail) * V(target)  -  V(here)  -  pFail * cost
              */
             o.reward = if (o.kind == OptKind.SHOT) {
-                Value.shotValue(Pitch.attX(side, carrier.x), carrier.y) - here
+                /*
+                 * A shot prices in the bodies in the way.
+                 *
+                 * Without this a shot was generated whenever a man was past
+                 * 62 m and scored on the anchored surface as though the goal
+                 * were empty, which produced seventy saves a match against a
+                 * real seven or eight. A defender standing in the line is the
+                 * single largest term in whether a shot is worth taking.
+                 */
+                val blockers = sim.opponentsNearLine(carrier, o.tx, o.ty)
+                val through = 1f / (1f + 1.35f * blockers)
+                Value.shotValue(Pitch.attX(side, carrier.x), carrier.y) * through - here
             } else {
                 (1f - pFail) * Value.possessionValue(tAttX, o.ty) - here
             }

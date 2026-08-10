@@ -62,7 +62,7 @@ enum class Ev(val group: EvGroup, val wired: Boolean = false) {
     SHOT_FIRST_TIME(EvGroup.SHOOTING),
     SHOT_ON_TARGET(EvGroup.SHOOTING),
     SHOT_OFF_TARGET(EvGroup.SHOOTING),
-    SHOT_BLOCKED(EvGroup.SHOOTING),
+    SHOT_BLOCKED(EvGroup.SHOOTING, wired = true),
     SHOT_DEFLECTED(EvGroup.SHOOTING),
     WOODWORK(EvGroup.SHOOTING),
     REBOUND(EvGroup.SHOOTING),
