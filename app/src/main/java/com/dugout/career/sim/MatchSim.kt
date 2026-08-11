@@ -1452,6 +1452,22 @@ class MatchSim(
     private fun updateTargets() {
         val chaser = claimant
         for (m in men) {
+            /*
+             * THE MAN CARRYING IT OWNS HIS OWN TARGET, and this line is the
+             * whole of a bug that made carrying pointless.
+             *
+             * [stepCarry] aims him at where he decided to take the ball. Then
+             * this method ran and aimed every man on the pitch, including him —
+             * and because he is also the `chaser`, it pointed him at where the
+             * ball will come to rest, which during a carry is his own feet. He
+             * was told to run to where he already was.
+             *
+             * So carrying existed, was chosen four hundred times a match, moved
+             * the ball nowhere, and every measurement of it was a measurement
+             * of a man standing still with the ball. Nothing counts a target
+             * that gets overwritten; it took reading the order of two calls.
+             */
+            if (m === carrier) continue
             if (m === chaser) {
                 // He is going to where the ball will STOP, by the time it gets
                 // there. Running at where it is now is running at a place the
