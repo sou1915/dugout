@@ -87,6 +87,13 @@ class MatchSim(
 
         /** Within this an opponent can challenge for the ball, metres. */
         const val TACKLE_M = 2.4f
+
+        /** A ball that got at least this high can be attacked in the air. */
+        const val AERIAL_MIN_H = 1.6f
+        /** How near where it lands a man must be to go up for it. */
+        const val AERIAL_M = 3.2f
+        /** How often two men going up together give a foul away. */
+        const val AERIAL_FOUL = 0.13f
         /**
          * How often a challenge is made at all, at zero range.
          *
@@ -686,6 +693,7 @@ class MatchSim(
         restartSide = -1
         Physics.strike(ball, tx - ball.x, ty - ball.y, chosen.mps, chosen.loft)
         stillFor = 0f
+        peakHeight = 0f
     }
 
     /**
@@ -792,6 +800,9 @@ class MatchSim(
         }
     }
 
+    /** How high this delivery got, so a landing knows whether it was aerial. */
+    private var peakHeight = 0f
+
     /** Who is walking the ball, and for how long. */
     private var carrier: Man? = null
     private var carryFor = 0f
@@ -810,6 +821,108 @@ class MatchSim(
         carryFor += DT
         m.aim(carryTargetX, carryTargetY, max(0.4f, CARRY_MAX_S - carryFor))
         stillFor = 0f
+    }
+
+    /**
+     * THE AERIAL DUEL — the second way a man can touch a football.
+     *
+     * Everything in this engine so far happens on the floor: a ball is struck,
+     * it rolls, and it is claimed at rest. A ball in the air was a ball nobody
+     * could do anything about, which quietly removed a whole third of the sport
+     * — the cross, the corner, the long ball forward, the defensive header, and
+     * with them the second largest source of fouls in a real match.
+     *
+     * It resolves where the ball LANDS, at the moment it lands, between the
+     * nearest man of each side. Who wins is the same race the rest of the
+     * engine uses, and what he does with it is decided by WHERE HE IS rather
+     * than by whose side he is on: in the opponent's box he heads it at goal,
+     * in his own he hammers it away, and anywhere else he flicks it on.
+     *
+     * That positional rule is the reason this needs no special cases. A
+     * centre-half who has gone up for a corner heads it at goal because he is
+     * standing in the six-yard box, not because anybody told him he was
+     * attacking.
+     */
+    private fun aerialDuel(): Boolean {
+        var mine: Man? = null
+        var theirs: Man? = null
+        var dMine = AERIAL_M
+        var dTheirs = AERIAL_M
+        val poss = possessionSide
+        for (o in men) {
+            if (o.isKeeper) continue
+            val d = Physics.dist(o.x, o.y, ball.x, ball.y)
+            if (o.side == poss) { if (d < dMine) { dMine = d; mine = o } }
+            else if (d < dTheirs) { dTheirs = d; theirs = o }
+        }
+        val a = mine
+        val b = theirs
+        if (a == null && b == null) return false
+
+        val code = "T$ticks.AERIAL"
+        val winner: Man
+        if (a != null && b != null) {
+            // A contest, and a real one: being nearer helps and does not decide.
+            val edge = ((dTheirs - dMine) / AERIAL_M).coerceIn(-1f, 1f)
+            val pMine = (0.5f + 0.35f * edge).coerceIn(0.12f, 0.88f)
+            winner = if (draw.next("$code.WIN") < pMine) a else b
+
+            // Two men jumping into the same space is the second commonest way
+            // to give a foul away in football, and this engine had one.
+            if (draw.next("$code.FOUL") < AERIAL_FOUL) {
+                val loser = if (winner === a) b else a
+                foul(loser, winner)
+                return false
+            }
+        } else winner = a ?: b!!
+
+        val attX = Pitch.attX(winner.side, ball.x)
+        val half = Pitch.WIDTH * 0.5f
+        val central = abs(ball.y - half) < 20.16f
+        ball.place(winner.x, winner.y)
+
+        when {
+            // In their box, and he can see the goal: a header at it.
+            attX > Pitch.LENGTH - 18f && central -> {
+                events.fire(Ev.SHOT_HEADER, winner.side)
+                shots[winner.side]++
+                val gx = Pitch.absX(winner.side, Pitch.LENGTH - 0.5f)
+                markTheLine(winner, gx, half)
+                lastStriker = winner
+                lastKind = OptKind.SHOT
+                lastReceiver = null
+                strikeX = ball.x; strikeY = ball.y
+                aimX = gx; aimY = half
+                Physics.strike(ball, gx - ball.x, half - ball.y, 16f, 2f)
+            }
+            // In his own third: get rid of it, high and long.
+            attX < 30f -> {
+                events.fire(Ev.CLEARANCE_HEADED, winner.side)
+                val tx = Pitch.absX(winner.side, attX + 35f)
+                lastStriker = winner
+                lastKind = OptKind.CLEAR
+                lastReceiver = null
+                strikeX = ball.x; strikeY = ball.y
+                aimX = tx; aimY = ball.y
+                Physics.strike(ball, tx - ball.x,
+                    draw.range("$code.CLR", -8f, 8f), 18f, 12f)
+            }
+            // Everywhere else: a nod on into the space in front.
+            else -> {
+                events.fire(Ev.FLICK_ON, winner.side)
+                val tx = Pitch.absX(winner.side, attX + 12f)
+                lastStriker = winner
+                lastKind = OptKind.PASS_SPACE
+                lastReceiver = null
+                strikeX = ball.x; strikeY = ball.y
+                aimX = tx; aimY = ball.y
+                Physics.strike(ball, tx - ball.x,
+                    draw.range("$code.FLK", -5f, 5f), 9f, 4f)
+            }
+        }
+        restartSide = -1
+        stillFor = 0f
+        return true
     }
 
     /** What he MEANT, reported as an event. What happened is resolved later. */
@@ -1471,7 +1584,38 @@ class MatchSim(
             return
         }
 
+        val wasUp = ball.height
         var moving = Physics.stepBall(ball, DT)
+
+        /*
+         * IT CAME DOWN. Somebody attacks it in the air.
+         *
+         * A lofted ball had no contest at all until now: it flew, it landed, it
+         * rolled, and whoever was nearest when it stopped simply had it. That is
+         * why a cross found a team-mate 14% of the time and why corners read 2.45
+         * a match against 9-11 — nobody could head one away, so a defender could
+         * not put the ball behind his own line.
+         */
+        /*
+         * THE PEAK, NOT THE PREVIOUS TICK.
+         *
+         * The first version asked whether the ball was above 1.6 m one tick ago
+         * and on the floor now. At a tenth of a second that needs it to fall a
+         * metre and a half in one step — fifteen metres a second downward — so
+         * it essentially never happened, and EventCensus said so in three lines
+         * before a single number could mislead anyone: NEVER FIRES, three
+         * times. A ball descends through 1.6, 1.2, 0.8, 0.3, 0 over several
+         * ticks, and by the tick it touches down it is no longer high.
+         *
+         * What decides whether a ball can be headed is how high it GOT, so that
+         * is what is remembered.
+         */
+        if (ball.height > peakHeight) peakHeight = ball.height
+        if (wasUp > 0.05f && ball.height <= 0.05f && restartSide < 0 &&
+            peakHeight > AERIAL_MIN_H) {
+            peakHeight = 0f
+            if (aerialDuel()) moving = true
+        }
 
         if (leftTheField()) {
             moving = false

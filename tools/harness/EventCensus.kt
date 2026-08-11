@@ -108,7 +108,8 @@ fun main(args: Array<String>) {
     val targets = listOf(
         Target("goals", 2.6, 2.9, value = { rate(it, Ev.GOAL) }, wired = { true }),
         Target("shots", 22.0, 27.0, value = { null }, wired = { shotsWired }),
-        Target("headers at goal", 3.0, 4.0, value = { null }, wired = { false }),
+        Target("headers at goal", 3.0, 4.0,
+            value = { rate(it, Ev.SHOT_HEADER) }, wired = { true }),
         Target("crosses", 28.0, 34.0, value = { null }, wired = { false }),
         Target("corners", 9.0, 11.0, value = { rate(it, Ev.CORNER_WON) }, wired = { true }),
         Target("passes attempted", 800.0, 950.0, value = { passes(it) }, wired = { true }),
