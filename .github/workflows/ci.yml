@@ -122,6 +122,12 @@ jobs:
       - name: OptionCensus — the §5 option-set bar
         run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.OptionCensusKt 20
 
+      # What is OFFERED against what is TAKEN. The census counts what
+      # happened and OptionCensus measures the size of the set; neither says
+      # which acts actually win, which is the thing that decides the football.
+      - name: OptionMix — offered against taken
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.OptionMixKt 10
+
       # The census. Printed for the record, not gated: with no decision layer
       # every acceptance row is either unwired or noise, and gating on noise is
       # how a project starts tuning against a number that means nothing. It
