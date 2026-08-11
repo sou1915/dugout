@@ -152,10 +152,53 @@ class Mind(@JvmField val man: Man) {
              * ACTS — a real carry, and a loose ball — and when those land the
              * numbers move on their own.
              */
+            /*
+             * AND THE SAME RACE DECIDES A CARRY.
+             *
+             * Pricing passes honestly made the one act still priced by a flat
+             * constant the most attractive thing on the pitch: passes fell to
+             * 493 a match and carries rose to 4,713 of 9,000 decisions. A model
+             * is only as good as its WORST-priced option, because the chooser
+             * finds it — that is the whole lesson of the predecessor's engine
+             * arriving at one pass a match, in mirror image.
+             *
+             * So this is not a re-fitted constant either. It is the same
+             * question asked of the man himself: he strikes it twelve metres
+             * into space, and either he gets there first or somebody else does.
+             * `opponentsWithin` was a headcount; this is a race, in seconds,
+             * decided by the rule the engine already uses for every touch.
+             */
             OptKind.CARRY ->
-                (0.82f - sim.opponentsWithin(o.tx, o.ty, 6f) * 0.09f).coerceIn(0.05f, 0.98f)
+                (0.92f - REACH_COST * (1f - sim.headStart(man, o.tx, o.ty)))
+                    .coerceIn(0.05f, 0.98f)
             else -> {
+                /*
+                 * WHO GETS THERE FIRST — the term that was missing entirely.
+                 *
+                 * `opponentsNearLine` prices being CUT OUT on the way. It does
+                 * not price the ball arriving somewhere an opponent simply
+                 * reaches before your man does, and MindCheck now says that is
+                 * where almost all of it goes: of 3,832 failed passes into
+                 * space, 86.9% ended with "opponent touched it first" and 1.1%
+                 * with offside. A clear lane into a crowded spot was priced as
+                 * a good ball.
+                 *
+                 * I very nearly fixed something else. Every price got much more
+                 * optimistic-looking the moment tackles landed, and the obvious
+                 * story was that his mind models one way of losing the ball and
+                 * the world now has five. The table says tackles account for
+                 * NONE of it — a tackle happens after a team-mate has already
+                 * received, so it is not a failed pass at all. The story was
+                 * wrong and only the split told me.
+                 *
+                 * The model is not a new fitted weight. It is the engine's OWN
+                 * contest rule, which decides every claim in the match: who
+                 * gets there first, in seconds. A half-second head start for
+                 * your man is a good ball; a half-second head start for his
+                 * marker is not.
+                 */
                 var p = 0.94f - d * 0.006f - sim.opponentsNearLine(man, o.tx, o.ty) * 0.14f
+                p -= REACH_COST * (1f - sim.headStart(o.receiver, o.tx, o.ty))
                 if (o.kind == OptKind.THROUGH_BALL) p -= 0.16f
                 /*
                  * A cross was priced at 52% and finds a team-mate 14% of the
@@ -324,6 +367,40 @@ class Mind(@JvmField val man: Man) {
          * not in the engine.
          */
         const val REPEAT_DAMP = 0.35f
+
+        /**
+         * How much of the price a lost race to the ball costs.
+         *
+         * At 1.0 a pass into a spot the opponent reaches first would be priced
+         * at zero, which is too strong — he can still shield it, or the ball
+         * can run kindly.
+         *
+         * Swept, 20 matches each. Calibration error is the mean gap between
+         * what players predicted and what happened, weighted by how often each
+         * act was chosen:
+         *
+         *   cost   calib err   goals  passes  completion  tackles
+         *   0.15       24.9%    1.70   558.2      59.8%     30.0
+         *   0.25       20.5%    2.20   614.3      60.6%     28.0
+         *   0.35       17.5%    2.75   641.0      61.4%     32.2
+         *   0.45       15.5%    5.10   656.4      61.6%     27.7
+         *   0.60       13.7%    4.20   675.6      62.0%     26.6
+         *
+         * 0.35 SHIPS, AND CALIBRATION DOES NOT AGREE. It falls monotonically
+         * with this number, so it does not pick an interior point at all — it
+         * just says "higher", and it would keep saying that to a mind so
+         * pessimistic it never passed. That is the flaw in using an internal
+         * consistency measure to choose: a model can agree with itself better
+         * while playing worse football.
+         *
+         * Goals and tackles are anchored OUTSIDE this engine, and at 0.35 both
+         * sit inside their §5 bands — goals 2.75 against 2.6-2.9 and tackles
+         * 32.2 against 30-36, the first time two rows have passed at once. The
+         * external anchor wins, and the tension is written down rather than
+         * hidden, because 13.7% is a better calibration number and somebody
+         * will find it later and wonder.
+         */
+        @JvmField var REACH_COST = 0.35f
 
         /**
          * The occurrence counter inside [Draw] is per code, so this one string

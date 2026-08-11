@@ -63,6 +63,9 @@ class MatchSim(
         /** How near his man a ball must die to count as having reached him. */
         const val INTERCEPT_GAP = 7f
 
+        /** Seconds of advantage that count as winning the race outright. */
+        const val HEAD_START_WINDOW = 0.6f
+
         /** Metres from the line of a pass within which a defender can read it. */
         const val READS_IT_M = 2.5f
 
@@ -274,7 +277,7 @@ class MatchSim(
      * held against an outcome. `MindCheck` buckets these and prints predicted
      * against actual.
      */
-    @JvmField var onOutcome: ((OptKind, Float, Boolean) -> Unit)? = null
+    @JvmField var onOutcome: ((OptKind, Float, Boolean, String) -> Unit)? = null
 
     /** What the man on the ball last committed to, still waiting on an answer. */
     private var pendingKind: OptKind? = null
@@ -296,10 +299,23 @@ class MatchSim(
      * passer's prediction (no, it did not reach him) while deciding nothing at
      * all about who has it. PRESS_WON read 45 a match on that mistake.
      */
-    private fun settle(worked: Boolean, decided: Boolean = true) {
+    /**
+     * @param why WHICH mechanism ended it. Added because I was about to fix a
+     *   cause I had not measured.
+     *
+     * Every price a player puts on an act got much worse the moment tackles and
+     * offside existed — PASS_SPACE from 8 points out to 27. The obvious story is
+     * that his mind models one way of losing the ball and the world now has
+     * five. That story is probably right and it is still a GUESS: three other
+     * things changed in the same stretch, including the strike physics, and
+     * guessing at causes is what has cost this session four reverted commits.
+     *
+     * So the engine says which one, and MindCheck prints the split per act.
+     */
+    private fun settle(worked: Boolean, decided: Boolean = true, why: String = "-") {
         val k = pendingKind ?: return
         pendingKind = null
-        onOutcome?.invoke(k, pendingP, worked)
+        onOutcome?.invoke(k, pendingP, worked, why)
 
         // The same fact, filed twice: once as a man's prediction coming off,
         // once as the side's record of a channel. The second is the only thing
@@ -453,7 +469,7 @@ class MatchSim(
 
     /** Park the ball for [side] to put back in play. */
     private fun deadBall(side: Int) {
-        settle(pendingKind != OptKind.SHOT && side == pendingSide)
+        settle(pendingKind != OptKind.SHOT && side == pendingSide, why = "dead ball")
         restartSide = side
         lastStriker = null
         lastReceiver = null
@@ -498,7 +514,7 @@ class MatchSim(
 
         // He has committed. What he thinks will happen is now on the record and
         // waiting to be contradicted.
-        settle(false)                       // anything still open never resolved
+        settle(false, why = "never resolved")
         pendingKind = chosen.kind
         pendingP = chosen.pSuccess
         pendingSide = m.side
@@ -540,7 +556,7 @@ class MatchSim(
             val blocker = nearestOnLine(m, chosen.tx, chosen.ty)
             if (blocker != null) {
                 events.fire(Ev.SHOT_BLOCKED, blocker.side)
-                settle(false)
+                settle(false, why = "blocked")
                 ball.place(blocker.x, blocker.y)
                 val bc = "T$ticks.S${blocker.side}P${blocker.slot.id}.BLOCK"
                 Physics.strike(
@@ -784,7 +800,7 @@ class MatchSim(
                 events.fire(if (d < SHORT_PASS_M) Ev.PASS_SHORT else Ev.PASS_LONG, s.side)
                 events.fire(Ev.PASS_MISPLACED, s.side)
             }
-            settle(worked = false, decided = false)
+            settle(worked = false, decided = false, why = "broke loose")
         }
 
         events.fire(Ev.LOOSE_BALL, -1)
@@ -928,7 +944,7 @@ class MatchSim(
             if (m === flagged) {
                 events.fire(Ev.OFFSIDE, m.side)
                 events.fire(Ev.FREE_KICK_INDIRECT, 1 - m.side)
-                settle(worked = false)
+                settle(worked = false, why = "offside")
                 lastStriker = null
                 lastKind = null
                 lastReceiver = null
@@ -1019,7 +1035,10 @@ class MatchSim(
         }
         // A shot is only ever answered at the goal line. Anything else here
         // means it did not go in.
-        settle(k != OptKind.SHOT && m.side == s.side)
+        settle(
+            k != OptKind.SHOT && m.side == s.side,
+            why = if (m.side == s.side) "-" else "opponent touched it first"
+        )
 
         lastStriker = null
         lastKind = null
@@ -1073,14 +1092,14 @@ class MatchSim(
                         else if (across < 1.3f) Ev.SAVE_ROUTINE else Ev.SAVE_DIVING,
                         defender
                     )
-                    settle(false)
+                    settle(false, why = "keeper")
                     val gx = if (defender == 0) 7f else Pitch.LENGTH - 7f
                     ball.place(gx, ball.y.coerceIn(6f, Pitch.WIDTH - 6f))
                     deadBall(defender)
                     return true
                 }
                 events.fire(Ev.GOAL, scorer)
-                settle(pendingKind == OptKind.SHOT)
+                settle(pendingKind == OptKind.SHOT, why = "goal")
                 goals[scorer]++
                 resetPositions()
                 kickOff(defender)
@@ -1511,6 +1530,30 @@ class MatchSim(
      * measurement that decides WHY instead of another attempt at the symptom —
      * see [ballVsAimSum] and [aimVsManSum].
      */
+    /**
+     * WHO REACHES THIS SPOT FIRST — 1 if the receiver wins the race, 0 if he
+     * loses it badly.
+     *
+     * Deliberately the same question [updateClaim] asks to decide every touch
+     * in the match, answered with the same [Physics.timeToReach]. A player
+     * judging a pass and the engine resolving it are then reasoning about the
+     * same thing, which is the only way his percentage can ever be right.
+     */
+    fun headStart(receiver: Man?, tx: Float, ty: Float): Float {
+        val r = receiver ?: return 0.5f
+        val tMate = Physics.timeToReach(r.x, r.y, r.vx, r.vy, tx, ty, r.topSpeed, r.accel)
+        var tOpp = Float.MAX_VALUE
+        for (o in men) {
+            if (o.side == r.side) continue
+            val t = Physics.timeToReach(o.x, o.y, o.vx, o.vy, tx, ty, o.topSpeed, o.accel)
+            if (t < tOpp) tOpp = t
+        }
+        if (tOpp == Float.MAX_VALUE) return 1f
+        // Half a second either way is the whole of it: football is not decided
+        // by who is nearer, it is decided by who is there.
+        return (0.5f + (tOpp - tMate) / (2f * HEAD_START_WINDOW)).coerceIn(0f, 1f)
+    }
+
     /** How many of [side]'s men sit within [r] of a point. */
     fun matesWithin(x: Float, y: Float, r: Float, side: Int): Int {
         var n = 0

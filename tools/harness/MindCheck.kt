@@ -52,6 +52,8 @@ fun main(args: Array<String>) {
 
     // (player, act) counts per match, for the between-match distance.
     val profiles = ArrayList<HashMap<String, Int>>()
+    /** Per act, which mechanism ended it. Measured rather than assumed. */
+    val causes = HashMap<OptKind, HashMap<String, Int>>()
     // How concentrated one man's choices are on his single favourite act.
     var topShareSum = 0.0
     var topShareN = 0
@@ -62,11 +64,13 @@ fun main(args: Array<String>) {
     for (i in 0 until matches) {
         val sim = MatchSim(1000L + i)
 
-        sim.onOutcome = { kind, p, worked ->
+        sim.onOutcome = { kind, p, worked, why ->
             val b = bands[(p * 10f).toInt().coerceIn(0, 9)]
             b.n++; b.predSum += p.toDouble(); if (worked) b.hits++
             val pk = perKind.getValue(kind)
             pk.n++; pk.predSum += p.toDouble(); if (worked) pk.hits++
+            if (!worked) causes.getOrPut(kind) { HashMap() }
+                .merge(why, 1, Int::plus)
         }
         sim.onChoice = { m, o, _, _ ->
             decisions++
@@ -128,6 +132,25 @@ fun main(args: Array<String>) {
         println(String.format("   %-14s %8d %10.1f%% %9.1f%%  %s",
             k.name, b.n, b.predicted * 100, b.actual * 100,
             if (gap > b.noise + 0.05) String.format("out by %.0f points", gap * 100) else "ok"))
+    }
+
+    // ------------------------------------------- 1b. WHY did it not work?
+    println()
+    println("   WHEN IT FAILED, WHAT ENDED IT?")
+    println()
+    println("   A price is only fixable once you know which mechanism is eating")
+    println("   these. Every act got much more optimistic-looking the moment")
+    println("   tackles and offside landed, and the obvious explanation — his mind")
+    println("   models one way of losing the ball and the world now has five — was")
+    println("   a guess until this table existed.")
+    println()
+    for ((k, m) in causes.entries.sortedByDescending { it.value.values.sum() }) {
+        val tot = m.values.sum()
+        if (tot < 50) continue
+        println(String.format("   %-14s %6d failures", k.name, tot))
+        for ((why, n) in m.entries.sortedByDescending { it.value }) {
+            println(String.format("       %-26s %6d  %5.1f%%", why, n, 100.0 * n / tot))
+        }
     }
 
     // ------------------------------------------------------- 2. repetition
