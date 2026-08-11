@@ -34,9 +34,9 @@ object SimGate : Gateable {
 
         sim.play { bucket, snap -> feed(ix, bucket, snap) }
 
-        // Zero, and honestly so: step 2 has no events. The result fingerprint
-        // is therefore a hash of zeros today and it will move the moment step 3
-        // gives it something to hash, which is exactly what a gate is for.
+        // Score, shots, cards and corners: the same four facts the predecessor
+        // hashed, so a number from either project means the same thing. This
+        // note used to say they were all zero because step 2 had no events.
         return MatchResult(
             homeGoals = sim.goals[0], awayGoals = sim.goals[1],
             homeShots = sim.shots[0], awayShots = sim.shots[1],

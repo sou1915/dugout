@@ -4,11 +4,18 @@ package com.dugout.career.sim
  * THE RANDOMNESS SUPERVISOR — a layer that watches, reacts, and does not lose
  * the fingerprint.
  *
- * The problem it replaces: [Rng] is a QUEUE. Draws come out in order, so
- * adding one new random decision anywhere shifts every draw after it, and both
- * fingerprints move wholesale on a change that touched one line. That is why
- * "everything moved" has been unreadable all session — a shifted stream and a
- * changed football look identical.
+ * The problem it replaces: the old Rng was a QUEUE. Draws came out in order, so
+ * adding one new random decision anywhere shifted every draw after it, and both
+ * fingerprints moved wholesale on a change that touched one line — a shifted
+ * stream and a changed football looked identical.
+ *
+ * IT ALSO MADE THE BRIEF'S TWO-STREAM DESIGN UNNECESSARY. §3 asked for separate
+ * outcome and presentation streams so that a cosmetic draw could be proved
+ * cosmetic. With addressed draws that is true by construction: a code used only
+ * for drawing something cannot disturb a code that decides something, whatever
+ * order they fire in. The second stream was carried unused for the whole of
+ * this project and is deleted here — the property it existed to guarantee is
+ * now a property of the mechanism.
  *
  * Here a draw is resolved by its CODE, not by its position:
  *

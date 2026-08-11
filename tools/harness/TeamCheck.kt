@@ -25,10 +25,9 @@ import gate.Fnv
  */
 
 private class Roll {
-    var goals = 0.0; var shots = 0.0; var passes = 0.0; var completed = 0.0
-    var interceptions = 0.0; var corners = 0.0
+    var goals = 0.0; var passes = 0.0; var completed = 0.0
+    var interceptions = 0.0
     var pressTriggered = 0.0; var pressWon = 0.0
-    var wonAx = 0.0; var wonN = 0.0
     var n = 0
     fun completion() = if (passes == 0.0) 0.0 else 100.0 * completed / passes
 }
@@ -45,11 +44,9 @@ private fun run(matches: Int, disposition: Boolean, memory: Boolean, acts: Boole
         sim.play()
         val e = sim.events
         r.goals += e[Ev.GOAL].toDouble()
-        r.shots += (e[Ev.SHOT_PLACED] + e[Ev.SHOT_LONG_RANGE]).toDouble()
         r.passes += (e[Ev.PASS_SHORT] + e[Ev.PASS_LONG]).toDouble()
         r.completed += e[Ev.PASS_COMPLETED].toDouble()
         r.interceptions += e[Ev.INTERCEPTION].toDouble()
-        r.corners += e[Ev.CORNER_WON].toDouble()
         r.pressTriggered += e[Ev.PRESS_TRIGGERED].toDouble()
         r.pressWon += e[Ev.PRESS_WON].toDouble()
         r.n++

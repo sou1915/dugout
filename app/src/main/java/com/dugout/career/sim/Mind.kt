@@ -65,15 +65,15 @@ class Mind(@JvmField val man: Man) {
      * meaning a person can check — and, for the first time, checked: every one
      * of them is now held against 30 matches of outcomes by MindCheck.
      *
-     * Several are measurably wrong and are DELIBERATELY left wrong. The reason
-     * is under CARRY, with the numbers that were measured when they were fixed
-     * instead.
+     * Most of them are no longer coefficients at all. A pass, a carry and a
+     * clearance are priced by the same RACE the engine uses to resolve every
+     * touch — who reaches the ball first, in seconds — so they cannot drift
+     * away from what the engine actually does. Only the shot is still a flat
+     * judgement, and it is deliberately left wrong; the reason is under it.
      *
-     * The one term visibly missing is being closed down — a man with a defender
+     * The one term visibly missing is being closed down: a man with a defender
      * on his shoulder completes fewer passes than a man in acres, and pressure
-     * does not appear here at all. It is left out ON PURPOSE. It would move
-     * every row in the census at the same time as the memory and the chooser,
-     * and then none of the three could be told apart.
+     * does not appear here at all.
      */
     fun pSuccess(sim: MatchSim, o: Option): Float {
         val side = man.side
@@ -108,15 +108,6 @@ class Mind(@JvmField val man: Man) {
                 Value.shotValue(Pitch.attX(side, man.x), man.y) / (1f + 1.35f * blockers)
             }
             /*
-             * A hoof goes to NOBODY. Whether a team-mate is near where it lands
-             * is the entire question, and 0.45 against 0.15 is the answer.
-             *
-             * MEASURED, AND KNOWINGLY WRONG. MindCheck put 1,774 of these
-             * against what happened: 1.6% are still ours afterwards, against
-             * 18.8% predicted. The number is left alone anyway, for the reason
-             * set out under CARRY below.
-             */
-            /*
              * A HOOF IS A RACE WITH NOBODY'S NAME ON IT.
              *
              * This was 0.45 with a team-mate near where it lands and 0.15
@@ -141,38 +132,27 @@ class Mind(@JvmField val man: Man) {
             OptKind.CLEAR ->
                 (0.10f + 0.70f * sim.headStartAt(side, o.tx, o.ty)).coerceIn(0.03f, 0.9f)
             /*
-             * A carry is priced at 82% and comes off 42% of the time.
+             * ONCE, THESE WERE FLAT CONSTANTS AND WERE LEFT KNOWINGLY WRONG.
              *
-             * THE PRICES BELOW ARE MEASURABLY WRONG AND ARE LEFT WRONG. That is
-             * a decision, it was tested, and this is the evidence.
+             * Carry 0.82 against a measured 42%, clearance 0.45/0.15 against a
+             * measured 1.6%. They were fitted to what MindCheck measured — and
+             * the football got worse over 40 matches against 40:
              *
-             * Every one of them was moved to what MindCheck measured — carry
-             * 0.82 -> 0.30 over two rounds, clearance 0.45/0.15 -> 0.04/0.013,
-             * cross -0.20 -> -0.58. The calibration table went almost entirely
-             * green. The FOOTBALL got worse, over 40 matches against 40:
+             *              fitted   left alone   band
+             *   passes     1196.4        940.4   800-950
+             *   completion  74.8%        80.3%   78-85%
+             *   clearances   0.40        59.30   (a match with no clearances)
              *
-             *              calibrated   left alone   band
-             *   passes         1196.4        940.4   800-950
-             *   completion      74.8%        80.3%   78-85%
-             *   interceptions   227.8        139.9   16-22
-             *   clearances       0.40        59.30   (a match with no
-             *                                         clearances in it)
+             * The reason was that both acts were MISIMPLEMENTED: a "carry" was
+             * a ball struck twelve metres into space with nobody's name on it,
+             * and a clearance died instantly because there was no loose ball.
+             * Fitting a price to that deletes the act rather than modelling it.
              *
-             * The reason is the same one that protects the shot above, and it
-             * generalises to every row: THESE ACTS ARE MISPRICED BECAUSE THEY
-             * ARE MISIMPLEMENTED. A "carry" here is a ball struck twelve metres
-             * into space with nobody's name on it, so of course it is lost 58%
-             * of the time — a man running with the ball would not be. A
-             * clearance dies at 1.6% because there is no loose ball and no
-             * second ball, so it is claimed instantly by whoever is nearest,
-             * and they are the opposition. Fitting the price to that does not
-             * model a carry or a clearance; it deletes them, and the table
-             * above is what deleting them costs.
-             *
-             * So the gap stays open and MindCheck prints it every build. It is
-             * not a to-do list for these constants. It is a to-do list for the
-             * ACTS — a real carry, and a loose ball — and when those land the
-             * numbers move on their own.
+             * Both have since been built properly — a man holds the ball now,
+             * and a contest can break — so the prices are no longer constants
+             * at all. They are races, below, and the gap closed by itself. That
+             * is the whole argument for leaving a number visibly wrong instead
+             * of tuning it: the wrongness was pointing at the act.
              */
             /*
              * AND THE SAME RACE DECIDES A CARRY.

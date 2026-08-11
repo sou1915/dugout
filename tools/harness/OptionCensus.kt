@@ -107,7 +107,7 @@ fun main(args: Array<String>) {
     println("OPTIONCENSUS — $matches matches, the option set on every touch")
     println()
     println("  An option is a team-mate 6-42 m away with a clear line to him.")
-    println("  Counted, not scored: there is no decision layer, and this number")
+    println("  Counted, not scored: nothing here scores them, and this number")
     println("  is a property of off-ball movement rather than of any chooser.")
     println()
 

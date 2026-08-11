@@ -22,17 +22,25 @@ class ShapeSnapshot {
 }
 
 /**
- * BUILD ORDER STEPS 2 AND 3: a pitch, ball flight, twenty-two men who move to
- * targets, and every event the engine can honestly report.
+ * THE MATCH: a pitch, ball flight, twenty-two men, and every event the engine
+ * can honestly report.
  *
- * There is still no decision layer. What moves the ball is a marked
- * placeholder, so the only events that fire are the ones the engine ACTUALLY
- * determines — geometry, and who touched it. Nothing here classifies a random
- * strike into a through ball or a cross, because §7 of the brief says not to
- * write a classifier that invents variety the football does not have, and a
- * cross requires an intent that does not exist yet.
+ * THE THREE STATES A BALL CAN BE IN, because everything here follows from them:
+ * in flight, at rest, or HELD. The third arrived late and changed the shape of
+ * the whole match — before it, a man received and struck in the same tick and
+ * nobody ever possessed the ball, which put possessions at two strikes against
+ * a real eight (docs/ANCHORS.md).
  *
- * The result is a census that is mostly zeros. That is the deliverable.
+ * Nothing here classifies a strike into a through ball or a cross after the
+ * fact. §7 of the brief forbids a classifier that invents variety the football
+ * does not have: an act is chosen as itself by [Mind], with a target and a
+ * pace, and the event follows from the intent.
+ *
+ * This doc used to say "there is still no decision layer" and "the only events
+ * that fire are the ones geometry determines", which was true when it was
+ * written and became false at step 5. Comments in this file are read as
+ * arguments, so a stale one is not untidiness — it is a false claim in a place
+ * that gets trusted.
  */
 class MatchSim(
     seed: Long,
@@ -209,9 +217,6 @@ class MatchSim(
      * property and CI enforces it.
      */
     @JvmField val draw = Draw(seed)
-
-    @Suppress("unused")
-    private val presentation = Rng(seed xor 0x5eed_0000_0000_0001L)
 
     val ball = Ball()
     val men = ArrayList<Man>(22)
@@ -515,10 +520,10 @@ class MatchSim(
     /**
      * THE MAN ON THE BALL DECIDES.
      *
-     * The step 2 placeholder that struck at a random point is GONE, as it was
-     * promised to be — deleted at step 5 rather than grown into a decision
-     * layer, which is how the predecessor ended up with a hand-weighted sum it
-     * could not fix by re-weighting.
+     * The step 2 placeholder that struck at a random point is GONE — deleted at
+     * step 5 rather than grown into a decision layer, which is how the
+     * predecessor ended up with a hand-weighted sum it could not fix by
+     * re-weighting.
      *
      * He now generates concrete options, scores them on four axes kept
      * separate, and one is chosen by softmax rather than maximised. What he
@@ -1206,10 +1211,10 @@ class MatchSim(
          * man is an interception; scrapping for a ball that has already arrived
          * and gone loose is a recovery, and real football counts them apart.
          *
-         * The rest are loose balls, which this engine has never modelled: every
-         * struck ball is claimed the instant it stops, so an incomplete pass is
-         * a turnover by construction. Naming them is the first step to fixing
-         * that.
+         * The rest are loose balls, and they are modelled now — a contested
+         * first touch can break, and the ball belongs to nobody until somebody
+         * wins it. When this note was written they were not, and every
+         * incomplete pass was a turnover by construction.
          */
         lastReceiver?.let { t ->
             val d = Physics.dist(ball.x, ball.y, t.x, t.y)
@@ -1325,12 +1330,12 @@ class MatchSim(
                 return true
             }
             val last = lastStriker
-            // A corner needs the DEFENDING side to have put it behind, and the
-            // placeholder only ever strikes forward — so no defender can send
-            // the ball over his own line, and this branch is unreachable today.
-            // EventCensus reports CORNER_WON as wired-and-never-fired, which is
-            // the correct finding: what is missing is a deflection, a blocked
-            // clearance and a defensive header, none of which exist yet.
+            // A corner needs the DEFENDING side to have put it behind. That was
+            // unreachable for a long time, because nothing a defender did could
+            // send the ball over his own line — no deflection, no blocked
+            // clearance, no defensive header. The headed clearance exists now
+            // and corners fire, at 2.4 a match against a real 9-11; the rest of
+            // the gap is the deflection, which still does not exist.
             if (last != null && last.side == defender) {
                 events.fire(Ev.CORNER_WON, scorer)
                 corners[scorer]++
@@ -1571,6 +1576,25 @@ class MatchSim(
             for (m in men) m.step(DT)
             ball.place(held.x, held.y)
 
+            /*
+             * A MAN CAN CARRY IT OVER THE LINE, and nothing was watching.
+             *
+             * [leftTheField] runs on the flight path, and the carry branch takes
+             * the whole tick before any of that. So while the ball was held it
+             * was never tested against the touchline or the byline — and a man's
+             * target is clamped to a metre OUTSIDE the pitch, so he can stand
+             * there, with the ball at his feet, off the field of play.
+             *
+             * Rare, and silently wrong when it happens: a carry into the corner
+             * gives no throw-in, and one over the byline gives no goal kick and
+             * no corner. Found by reading rather than by any counter, because
+             * nothing counts a thing that fails to happen.
+             */
+            if (leftTheField()) {
+                clock += DT
+                return
+            }
+
             if (ticks % CARRY_EVERY == 0 && carrier === held) {
                 if (!challenged(held)) onBall(held)
             }
@@ -1697,11 +1721,10 @@ class MatchSim(
      * How many team-mates he could actually reach — the OPTION SET, counted and
      * not scored.
      *
-     * There is no decision layer, so nothing here ranks these or picks one.
-     * That is the point: the size of this set is a property of where everybody
-     * else is standing, which is off-ball movement's job, and the brief's
-     * argument is that choice variety is downstream of it. If this number is
-     * small, no decision layer can rescue it.
+     * Nothing here ranks these or picks one, and that is the point: the size of
+     * this set is a property of where everybody else is standing, which is
+     * off-ball movement's job, and the brief's argument is that choice variety
+     * is downstream of it. If this number is small, no chooser can rescue it.
      */
     fun optionsFor(carrier: Man): Int {
         var n = 0

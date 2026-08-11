@@ -5,10 +5,11 @@ import kotlin.math.max
 /**
  * One of the twenty-two. Metres and m/s.
  *
- * There are no attributes here yet and that is deliberate: step 2 is eleven
- * men who move to targets, and a man who differs from his team-mate by a
- * rating would make the shape harder to read before there is anything to read.
- * Attributes arrive when they gate something — see the brief, §2.8.
+ * There are still no attributes and that is deliberate: a man who differs from
+ * his team-mate by a rating would make the shape harder to read before the
+ * shape itself is right. Attributes arrive when they gate something — see the
+ * brief, §2.8. Everything that separates two players today is his ROLE and his
+ * position, and RoleCheck exists to prove that is not decoration.
  */
 class Man(
     @JvmField val side: Int,
@@ -104,38 +105,4 @@ class Man(
         targetY = ty.coerceIn(-1f, Pitch.WIDTH + 1f)
         deadline = seconds
     }
-}
-
-/**
- * Deterministic RNG.
- *
- * Two streams, per the brief: [outcome] decides football, [presentation]
- * decides anything that is only looked at. A new cosmetic draw goes on the
- * presentation stream and the fingerprint then proves it did — which is the
- * only reason a cosmetic change can ever be trusted to be cosmetic.
- *
- * SplitMix64 rather than java.util.Random so the sequence is ours and cannot
- * drift with a platform.
- */
-class Rng(seed: Long) {
-    private var s = seed
-
-    fun nextLong(): Long {
-        s += -0x61c8864680b583ebL
-        var z = s
-        z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
-        z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
-        return z xor (z ushr 31)
-    }
-
-    /** 0 until n. */
-    fun nextInt(n: Int): Int {
-        require(n > 0)
-        return ((nextLong() ushr 1) % n).toInt()
-    }
-
-    /** 0f until 1f. */
-    fun nextFloat(): Float = ((nextLong() ushr 11).toDouble() / (1L shl 53).toDouble()).toFloat()
-
-    fun range(lo: Float, hi: Float): Float = lo + (hi - lo) * nextFloat()
 }
