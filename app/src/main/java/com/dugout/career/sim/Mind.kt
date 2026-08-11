@@ -259,8 +259,33 @@ class Mind(@JvmField val man: Man) {
             val worth = if (o.kind == OptKind.SHOT) 1f
                         else Value.possessionValue(Pitch.attX(side, o.tx), o.ty)
             o.reward = p * worth - here
+
+            /*
+             * A CARRY DOES NOT FORFEIT THE BALL, AND ITS RISK WAS COUNTED TWICE.
+             *
+             * Every other act here gives the ball away: you strike it, and it
+             * either finds someone or it does not. A carry gives it away to
+             * nobody — he still has it at the end of it. The only way a carry
+             * loses possession is that somebody comes and takes it, and that is
+             * modelled in its own place, in MatchSim.challenged(), with its own
+             * odds and its own foul and its own card.
+             *
+             * So charging a carry a full turnover cost priced the same danger a
+             * second time, and it is why carrying happened 129 times a match
+             * against a real 976 (docs/ANCHORS.md). In football a carry is the
+             * most common action on the pitch NOT because it gains much — it
+             * gains almost nothing — but because it is nearly free. Our model
+             * agreed it gains almost nothing and then charged it like a pass.
+             *
+             * The residue is not zero: carrying into a crowd really is worse
+             * than carrying into space, and pSuccess already measures that as a
+             * race. It is charged at a fraction of a pass's weight, and that
+             * fraction is the one number here — everything else follows from
+             * removing a double count.
+             */
+            val weight = if (o.kind == OptKind.CARRY) CARRY_RISK else RISK_WEIGHT
             o.risk = (1f - p) *
-                Value.turnoverCost(Pitch.attX(side, o.tx), o.ty) * RISK_WEIGHT
+                Value.turnoverCost(Pitch.attX(side, o.tx), o.ty) * weight
 
             /*
              * TACTICS ENTER HERE AND NOWHERE ELSE — now from two directions.
@@ -355,6 +380,35 @@ class Mind(@JvmField val man: Man) {
     companion object {
         /** How much a turnover weighs against what the ball is worth there. */
         const val RISK_WEIGHT = 1.6f
+
+        /**
+         * What a carry is charged instead, because losing it is a separate
+         * event with its own model.
+         *
+         * Swept against the REAL carry count rather than against a row anyone
+         * finds convenient, 14 matches each:
+         *
+         *   risk  carries  strk/pos  1-strike  completion  goals  passes
+         *   1.60    127.9      2.58     40.9%       59.3%   5.50    709
+         *   0.80    201.6      2.86     36.9%       60.1%   4.79    705
+         *   0.40    338.1      3.65     29.6%       57.1%   3.00    652
+         *   0.25    371.4      4.10     28.8%       56.6%   2.64    633
+         *   0.10    404.7      4.54     25.8%       58.2%   2.93    617
+         *   0.00    420.6      4.51     27.3%       57.3%   3.57    610
+         *   REAL    976.0      8.18      9.4%       84.9%   3.04   1183
+         *
+         * Everything moves the right way and nothing was told to. Carrying
+         * three times more often, possessions holding together twice as long,
+         * one-strike possessions falling by a third — all of it out of deleting
+         * a double count, with the chooser, the randomness and the roles
+         * untouched.
+         *
+         * 0.10 rather than 0.00, because zero would say carrying into a crowd
+         * is exactly as safe as carrying into space, and it is not — pSuccess
+         * already measures that as a race and this is what makes it count for
+         * anything.
+         */
+        @JvmField var CARRY_RISK = 0.10f
 
         /**
          * How hard a repeat is damped. At 0.35 the second identical ball is
