@@ -70,15 +70,8 @@ private fun gate(): Int {
         println("  result fingerprint  $resultHash")
         println("  shape fingerprint   $shapeHash")
         println()
-        val lines = ArrayList<String>()
-        lines.add("# Recorded by the owner. See GAME_BRIEF.md §1.2.")
-        lines.add("result.hash=$resultHash")
-        lines.add("shape.hash=$shapeHash")
-        lines.addAll(digest.asBaselineLines())
-
-        val proposed = File("build/baseline.proposed.properties")
-        proposed.parentFile?.mkdirs()
-        proposed.writeText(lines.joinToString("\n") + "\n")
+        val lines = writeProposal(resultHash, shapeHash, digest)
+        val proposed = File(PROPOSED)
 
         println("The owner records the baseline, not the agent (§1.2).")
         println("The proposed file — ${lines.size} lines — has been written to:")
@@ -122,7 +115,44 @@ private fun gate(): Int {
         println("  cosmetic — but it is often correct. If it is correct, say so with")
         println("  the breakdown above as the argument, and let the owner re-record.")
     }
+
+    /*
+     * AND GIVE HIM THE FILE TO RE-RECORD WITH.
+     *
+     * This branch used to say "let the owner re-record" and then write nothing,
+     * so the only way to obtain a new baseline was to delete the old one and
+     * run the gate again to trigger the no-baseline path. The instruction was
+     * real and the artefact it referred to was stale — left over from whenever
+     * the gate had last run with no baseline at all, which by then was eight
+     * commits and one whole afternoon ago.
+     *
+     * A tool that asks for a decision has to hand over what the decision needs.
+     * Writing it is not recording it: the file sits in build/ and the gate
+     * still refuses --record, so §1.2 is untouched.
+     */
+    writeProposal(resultHash, shapeHash, digest)
+    println()
+    println("  A fresh proposal has been written to $PROPOSED.")
+    println("  If the football above is right:")
+    println("    cp $PROPOSED $BASELINE")
     return MOVED
+}
+
+private const val PROPOSED = "build/baseline.proposed.properties"
+
+/** The lines a baseline would contain right now. Written, never installed. */
+private fun writeProposal(
+    resultHash: String, shapeHash: String, digest: ShapeDigest
+): List<String> {
+    val lines = ArrayList<String>()
+    lines.add("# Recorded by the owner. See GAME_BRIEF.md §1.2.")
+    lines.add("result.hash=$resultHash")
+    lines.add("shape.hash=$shapeHash")
+    lines.addAll(digest.asBaselineLines())
+    val proposed = File(PROPOSED)
+    proposed.parentFile?.mkdirs()
+    proposed.writeText(lines.joinToString("\n") + "\n")
+    return lines
 }
 
 // --------------------------------------------------------------- record
