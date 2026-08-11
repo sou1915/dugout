@@ -116,8 +116,30 @@ class Mind(@JvmField val man: Man) {
              * 18.8% predicted. The number is left alone anyway, for the reason
              * set out under CARRY below.
              */
+            /*
+             * A HOOF IS A RACE WITH NOBODY'S NAME ON IT.
+             *
+             * This was 0.45 with a team-mate near where it lands and 0.15
+             * without — a headcount, and measurably a fantasy: MindCheck put
+             * 2,185 of them against what happened and 3.7% stayed ours. It was
+             * left wrong on purpose while the act itself was misimplemented,
+             * because fitting the number would have deleted clearances from
+             * football rather than modelled them.
+             *
+             * That reason has expired. The race model prices exactly the
+             * question a hoof asks — our best man against their best man, to
+             * the place it lands — and it is the same mechanism the pass, the
+             * carry and every claim in the match already use. Not a fitted
+             * constant: the engine's own contest rule, asked about a ball with
+             * no name on it.
+             *
+             * It matters more than it looks. Clearances had become the SECOND
+             * most chosen act in the game, 2,268 of them, each one ending a
+             * possession 96% of the time. A price that wrong on an act that
+             * common is not a rounding error, it is the shape of the match.
+             */
             OptKind.CLEAR ->
-                if (sim.matesWithin(o.tx, o.ty, 12f, side) > 0) 0.45f else 0.15f
+                (0.10f + 0.70f * sim.headStartAt(side, o.tx, o.ty)).coerceIn(0.03f, 0.9f)
             /*
              * A carry is priced at 82% and comes off 42% of the time.
              *
@@ -199,6 +221,21 @@ class Mind(@JvmField val man: Man) {
                  */
                 var p = 0.94f - d * 0.006f - sim.opponentsNearLine(man, o.tx, o.ty) * 0.14f
                 p -= REACH_COST * (1f - sim.headStart(o.receiver, o.tx, o.ty))
+
+                /*
+                 * AND HE KNOWS WHERE THE LINE IS.
+                 *
+                 * 23% of every failed through ball was offside, and nothing in
+                 * this function had ever heard of the law. A player who cannot
+                 * see an offside line will keep playing men into it all
+                 * afternoon and never learn, because his percentage does not
+                 * contain the one thing that decides it.
+                 *
+                 * Not a penalty: a near-certainty. If the man is beyond the
+                 * second-last defender when the ball is struck, the flag goes
+                 * up — that is not a risk, it is the rule.
+                 */
+                if (sim.wouldBeOffside(side, o.tx, o.ty)) p = OFFSIDE_PRICE
                 if (o.kind == OptKind.THROUGH_BALL) p -= 0.16f
                 /*
                  * A cross was priced at 52% and finds a team-mate 14% of the
@@ -409,6 +446,12 @@ class Mind(@JvmField val man: Man) {
          * anything.
          */
         @JvmField var CARRY_RISK = 0.10f
+
+        /**
+         * What a ball played to a man standing offside is worth. Not zero: the
+         * engine gives the flag a 0.4 m tolerance and a linesman is a linesman.
+         */
+        const val OFFSIDE_PRICE = 0.05f
 
         /**
          * How hard a repeat is damped. At 0.35 the second identical ball is

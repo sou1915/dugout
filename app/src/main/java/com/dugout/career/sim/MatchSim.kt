@@ -90,13 +90,34 @@ class MatchSim(
         /**
          * How often a challenge is made at all, at zero range.
          *
-         * 0.55 gave 37.6 tackles a match against a §5 band of 30-36. 0.48 lands
+         * 0.55 gave 37.6 a match against a §5 band of 30-36; 0.48 landed
          * inside it. That is the only number here chosen to hit a row, and it
-         * is defensible because the row IS the anchor for this quantity —
-         * unlike a physical constant, "how often a defender goes in" has no
-         * meaning independent of how often defenders go in.
+         * is defensible for this quantity specifically — unlike a physical
+         * constant, "how often a defender goes in" has no meaning independent
+         * of how often defenders go in, and the band is its anchor.
+         *
+         * RE-SET WHEN CARRYING ARRIVED, because 0.48 was measured in a world
+         * where a man held the ball for one tick. Now he holds it for up to
+         * three seconds and is challenged on every re-ask, so the same rate
+         * produced 58.9 tackles a match. Re-swept, 14 matches each:
+         *
+         *   rate  tackles  fouls  goals  completion  strk/pos
+         *   0.48     58.9   8.50   2.00       63.5%      5.01
+         *   0.30     34.9   4.86   2.43       62.3%      5.10
+         *   0.20     23.1   2.29   1.93       62.3%      5.18
+         *   0.12     14.4   2.21   2.29       62.0%      5.23
+         *   REAL     30.8  22.00   3.04       84.9%      8.18
+         *
+         * 0.30 ships: 34.9 against a real 30.8 and a band of 30-36.
+         *
+         * Fouls stay far short at 4.86 against 22, and no rate here can fix
+         * that — a foul rate that turned 35 tackles into 22 fouls would be 0.63
+         * per challenge, which is not football. Real matches draw their fouls
+         * from off-ball challenges, shirt pulls, aerial duels and late contact,
+         * and this engine still has exactly one source. The gap is the missing
+         * sources.
          */
-        @JvmField var TACKLE_RATE = 0.48f
+        @JvmField var TACKLE_RATE = 0.30f
         /** A slide wins it more often and fouls far more often. */
         const val WIN_STAND = 0.55f
         const val WIN_SLIDE = 0.62f
@@ -1654,6 +1675,28 @@ class MatchSim(
      * judging a pass and the engine resolving it are then reasoning about the
      * same thing, which is the only way his percentage can ever be right.
      */
+    /**
+     * The same race, with nobody's name on the ball: OUR best against THEIR
+     * best. What a hoof upfield actually is.
+     */
+    fun headStartAt(side: Int, tx: Float, ty: Float): Float {
+        var mine = Float.MAX_VALUE
+        var theirs = Float.MAX_VALUE
+        for (o in men) {
+            val t = Physics.timeToReach(o.x, o.y, o.vx, o.vy, tx, ty, o.topSpeed, o.accel)
+            if (o.side == side) { if (t < mine) mine = t } else if (t < theirs) theirs = t
+        }
+        if (mine == Float.MAX_VALUE || theirs == Float.MAX_VALUE) return 0.5f
+        return (0.5f + (theirs - mine) / (2f * HEAD_START_WINDOW)).coerceIn(0f, 1f)
+    }
+
+    /** Is a man there offside if the ball is played to him now? */
+    fun wouldBeOffside(side: Int, tx: Float, ty: Float): Boolean {
+        val ax = Pitch.attX(side, tx)
+        if (ax <= Pitch.LENGTH * 0.5f) return false
+        return ax > offsideLine[side] + OFFSIDE_TOLERANCE
+    }
+
     fun headStart(receiver: Man?, tx: Float, ty: Float): Float {
         val r = receiver ?: return 0.5f
         val tMate = Physics.timeToReach(r.x, r.y, r.vx, r.vy, tx, ty, r.topSpeed, r.accel)
