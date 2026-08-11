@@ -223,19 +223,34 @@ class Mind(@JvmField val man: Man) {
                 p -= REACH_COST * (1f - sim.headStart(o.receiver, o.tx, o.ty))
 
                 /*
-                 * AND HE KNOWS WHERE THE LINE IS.
+                 * AND HE KNOWS WHERE THE LINE IS — FOR THE MAN, NOT THE BALL.
                  *
-                 * 23% of every failed through ball was offside, and nothing in
-                 * this function had ever heard of the law. A player who cannot
-                 * see an offside line will keep playing men into it all
-                 * afternoon and never learn, because his percentage does not
-                 * contain the one thing that decides it.
+                 * 23% of every failed through ball was offside and nothing here
+                 * had heard of the law. A player who cannot see an offside line
+                 * plays men into it all afternoon and never learns, because his
+                 * percentage does not contain the thing that decides it. Not a
+                 * penalty: if the man is beyond the second-last defender when
+                 * the ball is struck, the flag goes up. That is the rule, not a
+                 * risk.
                  *
-                 * Not a penalty: a near-certainty. If the man is beyond the
-                 * second-last defender when the ball is struck, the flag goes
-                 * up — that is not a risk, it is the rule.
+                 * THE FIRST VERSION TESTED THE WRONG POINT, and OptionMix found
+                 * it in one line: THROUGH_BALL offered 592 times a match and
+                 * taken ZERO. Not rare — never.
+                 *
+                 * Offside is judged on where the RECEIVER stands at the moment
+                 * the ball is played. This tested where the BALL WAS AIMED —
+                 * and a through ball is aimed nine metres beyond him on
+                 * purpose, because that is what the act IS. So the mind flagged
+                 * every through ball as offside while the rule in MatchSim,
+                 * which tests the man, would have allowed it. The engine and
+                 * the player were reading the same law off different pages.
+                 *
+                 * A ball into space beyond the last defender, run onto by a man
+                 * who was level when it was struck, is the most legal thing in
+                 * football and it had been made impossible.
                  */
-                if (sim.wouldBeOffside(side, o.tx, o.ty)) p = OFFSIDE_PRICE
+                val r = o.receiver
+                if (r != null && sim.wouldBeOffside(side, r.x, r.y)) p = OFFSIDE_PRICE
                 if (o.kind == OptKind.THROUGH_BALL) p -= 0.16f
                 /*
                  * A cross was priced at 52% and finds a team-mate 14% of the
