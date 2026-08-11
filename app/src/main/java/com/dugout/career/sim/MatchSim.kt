@@ -190,8 +190,22 @@ class MatchSim(
         /** Half the width a body actually blocks, metres. */
         const val BLOCK_HALF_WIDTH = 0.75f
 
-        /** How far across his line a keeper gets to a struck ball, metres. */
-        const val GK_REACH = 2.5f
+        /**
+         * How far he covers standing still — set, arms out, before he moves.
+         * Swept together with the dive speed below.
+         */
+        @JvmField var GK_SET_REACH = 1.1f
+        /**
+         * How fast he travels sideways once he goes. A dive, not a run: a
+         * keeper does not sprint along his line, he throws himself.
+         */
+        @JvmField var GK_DIVE_MPS = 4.0f
+        /**
+         * How long before he moves at all. Human reaction, and the reason a
+         * close shot beats a good keeper: inside six yards it is most of the
+         * flight.
+         */
+        const val GK_REACTION_S = 0.20f
         /** A ball along the ground is easier to go down to. */
         const val GK_LOW_BONUS = 0.7f
 
@@ -695,6 +709,7 @@ class MatchSim(
         }
         strikeX = ball.x
         strikeY = ball.y
+        strikeAt = clock
         restartSide = -1
         Physics.strike(ball, tx - ball.x, ty - ball.y, chosen.mps, chosen.loft)
         stillFor = 0f
@@ -805,6 +820,9 @@ class MatchSim(
         }
     }
 
+    /** When the ball was last struck. A keeper's reach is a time, not a length. */
+    private var strikeAt = 0f
+
     /** How high this delivery got, so a landing knows whether it was aerial. */
     private var peakHeight = 0f
 
@@ -893,6 +911,7 @@ class MatchSim(
                 shots[winner.side]++
                 val gx = Pitch.absX(winner.side, Pitch.LENGTH - 0.5f)
                 markTheLine(winner, gx, half)
+                strikeAt = clock
                 lastStriker = winner
                 lastKind = OptKind.SHOT
                 lastReceiver = null
@@ -1294,9 +1313,45 @@ class MatchSim(
                  * the corner beats him, and that falls out of where he is
                  * standing rather than out of a save percentage.
                  */
+                /*
+                 * A KEEPER'S REACH IS A TIME, NOT A LENGTH.
+                 *
+                 * It was a constant: 2.5 m, plus 0.7 for a ball along the
+                 * ground. Against a goal 7.32 m wide with a keeper standing
+                 * near the middle, that covered about 87% of it — for a tap-in
+                 * from six yards and for a drive from thirty alike. He needed
+                 * no time to get anywhere because he did not move.
+                 *
+                 * What actually beats a goalkeeper is the clock. A shot from
+                 * six yards at 20 m/s gives him three tenths of a second and he
+                 * covers a metre; the same shot from thirty gives him well over
+                 * a second and he reaches the post. That one change is the
+                 * difference between distance mattering and distance being
+                 * decoration, and Value.shotValue — anchored on real conversion
+                 * by distance — has been describing a curve the engine could
+                 * not produce.
+                 *
+                 * Survivable while almost nothing reached the box. The moment
+                 * the carry fix let the ball arrive, shots went to 48.8 a match
+                 * against a real 25.5 and goals to 4.40, and this became the
+                 * binding constraint.
+                 */
                 val gk = men.first { it.side == defender && it.isKeeper }
                 val across = abs(gk.y - ball.y)
-                val reach = GK_REACH + (if (ball.height < 0.9f) GK_LOW_BONUS else 0f)
+                /*
+                 * AND HE HAS TO SEE IT FIRST.
+                 *
+                 * The first version gave him his dive speed from the instant of
+                 * the strike, which makes him quickest exactly where a keeper is
+                 * slowest. A human takes about two tenths of a second to react
+                 * before anything moves, and inside six yards that is most of
+                 * the flight — which is the whole reason a close-range shot
+                 * beats a good goalkeeper.
+                 */
+                val flight = (clock - strikeAt).coerceIn(0f, 2.0f)
+                val diving = (flight - GK_REACTION_S).coerceAtLeast(0f)
+                val reach = GK_SET_REACH + GK_DIVE_MPS * diving +
+                    (if (ball.height < 0.9f) GK_LOW_BONUS else 0f)
                 if (across < reach) {
                     /*
                      * A SAVE IS A SHOT STOPPED, NOT ANY BALL STOPPED.
