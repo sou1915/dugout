@@ -60,6 +60,11 @@ class MatchSim(
         /** Ticks between claim-time recomputations. 3 ticks is 0.3 s. */
         const val CLAIM_EVERY = 3
 
+        /** Ticks between asking a carrying man again. 5 ticks is half a second. */
+        const val CARRY_EVERY = 5
+        /** How long anyone may keep walking with it before he must decide. */
+        const val CARRY_MAX_S = 3.0f
+
         /** How near his man a ball must die to count as having reached him. */
         const val INTERCEPT_GAP = 7f
 
@@ -469,6 +474,8 @@ class MatchSim(
 
     /** Park the ball for [side] to put back in play. */
     private fun deadBall(side: Int) {
+        carrier = null
+        carryFor = 0f
         settle(pendingKind != OptKind.SHOT && side == pendingSide, why = "dead ball")
         restartSide = side
         lastStriker = null
@@ -491,7 +498,31 @@ class MatchSim(
      * weight and a direction and becomes an object again, so whether it reaches
      * the man he picked is physics and claim times, not a success roll.
      */
-    private fun strikeOn(m: Man) {
+    /**
+     * HE HAS THE BALL. Now, and for as long as he keeps it.
+     *
+     * This is the change the whole engine was waiting for. Until now a man
+     * RECEIVED AND STRUCK IN THE SAME TICK: there was no state in which anybody
+     * possessed the ball, only a ball in flight and a ball being hit. Measured
+     * against real event data (docs/ANCHORS.md), that showed up everywhere at
+     * once:
+     *
+     *                          real    this engine
+     *   strikes a possession   8.18    1.98
+     *   one-strike possessions 9.4%    48.8%
+     *   possessions a match     151    459
+     *   CARRIES a match         976    0
+     *
+     * A carry is nearly as common as a pass in football and there were none
+     * here, because a carry needs somewhere to live: a man who owns the ball
+     * across ticks. Take-ons, shielding, turning, drawing a foul and holding
+     * play up all need the same thing, which is why nine events sat unwired
+     * with no route to reach them.
+     *
+     * So he is asked repeatedly now, every [CARRY_EVERY] ticks — roughly a
+     * touch every few strides — and one of the answers is "keep it".
+     */
+    private fun onBall(m: Man) {
         if (cornerPending) { events.fire(Ev.CORNER_TAKEN, m.side); cornerPending = false }
 
         val pressure = pressureOn(m)
@@ -511,6 +542,36 @@ class MatchSim(
         val chosen = m.mind.decide(this, optionBuf, pressure, draw)
         onChoice?.invoke(m, chosen, optionBuf.size, pressure)
         onAppraisal?.invoke(m, optionBuf, chosen)
+
+        /*
+         * KEEPING IT IS A REAL ANSWER NOW, not a ball struck into space.
+         *
+         * The old CARRY struck the ball twelve metres ahead with nobody's name
+         * on it, which is why MindCheck priced it at 79% and measured 32%: it
+         * was a bad long pass wearing the word "carry". Here he simply keeps
+         * it, walks it toward the same target, and is asked again shortly.
+         *
+         * The bound matters. Without one a man in space carries forever and the
+         * match becomes one long dribble, so it ends when he has held it long
+         * enough — and every re-ask can end it sooner.
+         */
+        if (chosen.kind == OptKind.CARRY && carryFor < CARRY_MAX_S) {
+            if (carrier !== m) {
+                carrier = m
+                carryFor = 0f
+                events.fire(Ev.CARRY, m.side)
+                // Owning it ends the flight: nothing is in the air any more.
+                settle(worked = true)
+                lastStriker = m
+                lastKind = OptKind.CARRY
+                lastReceiver = null
+            }
+            carryTargetX = chosen.tx
+            carryTargetY = chosen.ty
+            return
+        }
+        carrier = null
+        carryFor = 0f
 
         // He has committed. What he thinks will happen is now on the record and
         // waiting to be contradicted.
@@ -710,6 +771,26 @@ class MatchSim(
         }
     }
 
+    /** Who is walking the ball, and for how long. */
+    private var carrier: Man? = null
+    private var carryFor = 0f
+    private var carryTargetX = 0f
+    private var carryTargetY = 0f
+
+    /** For anything that needs to know the ball is owned rather than loose. */
+    val carrierMan: Man? get() = carrier
+
+    /**
+     * Walk it. He moves at his own pace toward where he meant to take it and
+     * the ball travels at his feet — neither in flight nor at rest, which is
+     * the third state this engine did not have.
+     */
+    private fun stepCarry(m: Man) {
+        carryFor += DT
+        m.aim(carryTargetX, carryTargetY, max(0.4f, CARRY_MAX_S - carryFor))
+        stillFor = 0f
+    }
+
     /** What he MEANT, reported as an event. What happened is resolved later. */
     private fun fireIntent(m: Man, o: Option) {
         val attX = Pitch.attX(m.side, m.x)
@@ -791,6 +872,8 @@ class MatchSim(
      * counting — an incomplete pass is a pass.
      */
     private fun breakLoose(code: String) {
+        carrier = null
+        carryFor = 0f
         val s = lastStriker
         if (s != null) {
             val d = Physics.dist(strikeX, strikeY, ball.x, ball.y)
@@ -876,14 +959,16 @@ class MatchSim(
         val pWin = if (slide) WIN_SLIDE else WIN_STAND
         val r = draw.next("$code.OUT")
 
-        if (r < pFoul) { foul(t, m); return true }
+        if (r < pFoul) { carrier = null; carryFor = 0f; foul(t, m); return true }
         if (r < pFoul + pWin) {
+            carrier = null
+            carryFor = 0f
             events.fire(Ev.DISPOSSESSED, m.side)
             lastStriker = null
             lastKind = null
             lastReceiver = null
             ball.place(t.x, t.y)
-            strikeOn(t)
+            onBall(t)
             return true
         }
         breakLoose("T$ticks.TACKLE_LOOSE")
@@ -1335,6 +1420,36 @@ class MatchSim(
     }
 
     private fun tick() {
+        /*
+         * A CARRIED BALL IS NEITHER IN FLIGHT NOR AT REST, so it takes the
+         * whole tick before anything else looks at it. He keeps it until he is
+         * tackled, until he chooses to play it, or until he has had it long
+         * enough.
+         */
+        val held = carrier
+        if (held != null) {
+            for (t in teams) t.observe(this)
+            if (ticks % TeamMind.READ_EVERY == 0) for (t in teams) t.read(this)
+            if (ticks % CLAIM_EVERY == 0) { updateOffsideLines(); updateSupport() }
+            ticks++
+            stepCarry(held)
+            updateTargets()
+            for (m in men) m.step(DT)
+            ball.place(held.x, held.y)
+
+            if (ticks % CARRY_EVERY == 0 && carrier === held) {
+                if (!challenged(held)) onBall(held)
+            }
+            if (carrier === held && carryFor >= CARRY_MAX_S) {
+                // Time is up: he must do something with it.
+                carrier = null
+                carryFor = 0f
+                onBall(held)
+            }
+            clock += DT
+            return
+        }
+
         var moving = Physics.stepBall(ball, DT)
 
         if (leftTheField()) {
@@ -1379,7 +1494,7 @@ class MatchSim(
                     resolveTouch(c)
                     // He has it. Now somebody is allowed to come and take it
                     // off him — which nobody in this engine could do until now.
-                    if (!challenged(c)) strikeOn(c)
+                    if (!challenged(c)) onBall(c)
                 }
             } else if (stillFor > 6f) {
                 /*
@@ -1406,7 +1521,7 @@ class MatchSim(
                 val f = c ?: men[0]
                 resolveTouch(f)
                 ball.place(f.x, f.y)
-                strikeOn(f)
+                onBall(f)
             }
         }
 
