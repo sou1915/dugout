@@ -122,6 +122,19 @@ jobs:
       - name: OptionCensus — the §5 option-set bar
         run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.OptionCensusKt 20
 
+      # THE SIX ROWS A REVIEWER ACTUALLY READS, with the direction each is
+      # expected to move next. A stated direction is a falsifiable claim: if a
+      # commit moves a row the way this predicts, the model behind it was
+      # right, and if it moves the other way that is worth more than the row.
+      - name: Scoreboard — shots, goals, completion, interceptions, corners, offsides
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.ScoreboardKt 30
+
+      # WHY twice the shots. Ours and real football bucketed by distance in the
+      # same buckets, offered against taken, with xG beside each. Printed, never
+      # gated: it is a diagnosis and gating a diagnosis invites tuning at it.
+      - name: ShotAudit — where the shots come from
+        run: java $JAVA_OPTS_ENCODING -Djava.awt.headless=true -cp build/gate.jar harness.ShotAuditKt 20
+
       # What is OFFERED against what is TAKEN. The census counts what
       # happened and OptionCensus measures the size of the set; neither says
       # which acts actually win, which is the thing that decides the football.
