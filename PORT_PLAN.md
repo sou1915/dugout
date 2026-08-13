@@ -341,8 +341,27 @@ starts.
 *Done when, in order:*
 - C# `Gate` over 200 matches prints `da1caad36bfeca9b` **(oracle)**. If it does
   not, phase 2 is not finished and I bisect rather than proceed.
-- C# `BalanceBig` over 9,120 matches lands in **2.5–2.7 goals, home ~45%**. The
-  oracle's figure is being measured as I write this and goes in here.
+- C# `BalanceBig` over 9,120 matches lands in **2.5–2.7 goals, home ~45%**.
+  The oracle, measured here over the full 4 worlds × 6 seasons:
+
+  ```
+  === top division, 4 worlds x 6 seasons = 9120 matches ===
+  chance quality     0.104
+  goals per game     2.54  +/- 0.03 at 95%   target 2.5 - 2.7
+  home wins          45.9%     target ~45%
+  draws              25.0%     target ~25%
+  away wins          29.1%     target ~30%
+  cards per game     0.91
+  INSIDE THE TARGET BAND
+  ```
+
+  2.54 and 45.9% are the same figures `docs/DEAD_CODE.md` records after 4b, so
+  the oracle agrees with the written record on the aggregate as well as on the
+  fingerprint. Note `chance quality 0.104`, not the 0.113 in `BalanceBig.kt`'s
+  own comment — the comment is stale, and this is `CLAUDE.md` rule 8 in the
+  wild. The C# port targets **2.54 ± 0.03**, which is a tighter and more useful
+  test than the 2.5–2.7 band: hitting the band is necessary, matching the mean
+  is what says the translation is faithful.
 - C# `EventCensus` reproduces the oracle's 90 rows, including which are 0.00.
 - Only then is the baseline recorded — **by you, not by me** — and the gate
   protects everything after it.
