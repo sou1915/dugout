@@ -8,21 +8,19 @@ number is given so it can be re-run.
 
 ## 0. What is actually in front of me
 
-### 0.1 Only one of the two zips arrived
+### 0.1 Both zips are now here
 
-`careerdugout20.zip` is in the repository and is intact. **`careerdugoutunity.zip`
-is not** — not in the working tree, not in any commit in `git log --all`, which
-contains only `careerdugout-5` … `careerdugout20`. So the Unity skeleton that
-decision 2 says to keep — `LowPolyFootballer.cs`, the procedural pitch and
-stadium, the broadcast camera, the scene builder, the dashboard — does not exist
-on this machine.
+`careerdugoutunity.zip` arrived after the first draft of this plan and the
+blocker it recorded is closed. It is **13 files, 41,978 bytes, 7 C# files, 745
+lines** — the brief says 23 files; the 42 KB is exact. No `.meta` files, no
+`.asmdef`, no scene (the Editor script builds it), Unity `6000.0.0f1`.
 
-`Assets/Scripts/Core/DeterministicMatchEngine.cs`, which decision 1 says to
-delete, is also absent. Deleting it is free; keeping the other work is not.
+`Assets/Scripts/Core/DeterministicMatchEngine.cs` is there and is as described:
+84 lines, `for (minute = 6; minute < 90; minute += random.Next(5, 10))`, a
+`roll < 16 / < 29 / < 41 …` ladder, and no ball, no positions and no 22 players.
+It goes, per decision 1.
 
-This blocks phases 6–8 and nothing before them. Phases 1–5 are the simulation,
-and they need no Unity file at all — which is the point of the whole
-architecture. **I can start immediately and run out of work at phase 6.**
+Section 3.1 below is what actually survives, file by file, measured.
 
 ### 0.2 `GAME.md` is not in the zip
 
@@ -237,21 +235,106 @@ gets a caller or a harness on day one.
 | Unity 6 Editor | **absent**, and not installable here |
 | Android SDK / NDK | **absent** |
 
-So phases 1–5 are fully measurable here: the simulation compiles as a plain
-class library and every harness runs with `dotnet run` in seconds, exactly as the
-brief intends. Phases 6–8 — the broadcast, the manager screens, the APK — I can
+So phases 0–4 are fully measurable here: the simulation compiles as a plain class
+library and every harness runs with `dotnet run` in seconds, exactly as the brief
+intends. Phases 5–7 — the broadcast, the manager screens, the APK — I can
 **write** but cannot **compile, run, render or ship** from this container.
 
 That collides directly with `CLAUDE.md` rules 1 and 2, and I would rather say so
-now than hand over Unity code with "should work" attached to it. Options, for
-you to pick from later: a Unity Cloud Build or a self-hosted runner with the
-Editor and Android SDK; a GitHub Actions workflow using a licensed Unity image;
-or you build locally and I work from your output. **Nothing needs deciding until
-phase 6.**
+now than hand over Unity code with "should work" attached to it. It is also the
+one thing the arriving zip did not fix: the skeleton's own README ends on
+*"Unity Editor validation and Android device build (requires a local Unity
+installation)"* — unticked — so nothing in this project has ever been through a
+compiler that knows what a `MonoBehaviour` is.
+
+Options, for you to pick from later: a self-hosted runner with the Editor and
+Android SDK; a GitHub Actions workflow on a licensed Unity image; or you build
+locally and I work from your output. **Nothing needs deciding until phase 5.**
 
 ---
 
-## 3. Architecture
+## 3. The Unity skeleton, read file by file
+
+### 3.1 What survives
+
+745 lines arrived. **About 280 of them are worth keeping**, and I want to be
+plain about that number rather than let "it replaces ~9,400 lines of Kotlin
+rendering" stand unqualified. Unity replaces those 9,426 lines. The skeleton
+contributes a starting point of roughly 280. Both things are true and only the
+first one is a large number.
+
+| file | lines | verdict |
+|---|---:|---|
+| `LowPolyFootballer.cs` | 96 | **keep**, two fixes. The best file in the zip. |
+| `MatchBroadcastDirector.cs` | 254 | **split** — see below |
+| `ManagerDashboard.cs` | 129 | **keep the builders** (`Panel`/`Label`/`Button`, 46 lines); the four panels are placeholder content |
+| `CareerDugoutSceneBuilder.cs` | 29 | **keep**, extend |
+| `GameBootstrap.cs` | 67 | **rewrite** — the shape survives as ~15 lines, `PlayerPrefs` → JSON |
+| `GameModels.cs` | 86 | **delete** — an 11-man squad with no bench, string club names and six hard-coded opponents, against a world of 1,236 clubs and 32,136 players |
+| `DeterministicMatchEngine.cs` | 84 | **delete** — decision 1 |
+
+`MatchBroadcastDirector.cs` is not one thing and should not be judged as one:
+
+- `BuildStadium`, `CreateLine`, `CreateGoal`, `SetMaterial` — ~73 lines,
+  **keep and rescale** (§3.2)
+- the camera in `Update`, 5 lines — **keep**. This is the whole of "the
+  broadcast camera": a lerped elevated follow with a `LookAt` biased 75% of the
+  way from the centre circle to the focus. It is a good five lines.
+- `CreateBroadcastOverlay` — 30 lines, **keep**
+- `BuildPlayers` — 28 lines, **rewrite** for 22 men out of the world
+- `PlaySequence`, `RunPhase`, `ResetShape`, `Duration`, `EventColor` — ~85 lines,
+  **delete**. This is the replay-a-decided-list architecture itself, not just the
+  engine that feeds it. `PlaySequence` is `foreach (var e in result.Events) { …
+  yield return new WaitForSeconds(Duration(e.Kind)); }` and `RunPhase` moves the
+  other twenty men with `Mathf.Sin((index + minute) * 1.9f)` — a decorative
+  wiggle around a fixed slot. Deleting the engine and keeping the director would
+  keep the thing decision 1 is actually about.
+
+### 3.2 Three defects in the part being kept
+
+**The pitch is less than half size, and nothing else is.** The `Plane` primitive
+is 10×10 units, scaled `(4.5, 1, 2.9)`, and the painted lines sit at x = ±22.35
+and z = ±14.25 — a **44.7 × 28.5** pitch. A real one is 105 × 68, which is what
+`ShapeCheck.kt` says in its own comment and what every distance in the engine is
+denominated in. Everything else in the scene is at roughly real scale: the goals
+are 6.6 wide × 2.4 high against a regulation 7.32 × 2.44, and a player's head
+tops out at 1.98–2.39 units (`bodyHeight` is `0.91 + (BodySeed % 19) * 0.012`,
+the head sits at `1.91 × bodyHeight` and its sphere adds 0.24).
+
+So a footballer occupies 2.2/44.7 = **4.9% of the pitch length, against a real
+1.85/105 = 1.76%** — men about **2.8× too big for the ground they are on**. Feed
+engine positions straight in and a 38.4 m block would be drawn across most of the
+pitch. The fix is one line — the pitch becomes 105 × 68 and the line positions
+follow — and it has to happen before the first frame is judged, or every shape
+reading taken off the screen is wrong by a factor of two and a half.
+
+**`Shader.Find` at runtime is an Editor-only habit.** Both call sites are
+`Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard")`, and
+`Packages/manifest.json` contains no `com.unity.render-pipelines.universal` — URP
+is not installed, so the first `Find` always returns null and the fallback always
+runs. That is survivable. What is not: in a player build `Shader.Find` returns
+null for any shader not referenced by a material in a scene or listed under
+Always Included Shaders. This works in the Editor and gives magenta or null
+materials in the APK — which is precisely the class of bug this project has been
+burned by seven times, correct code on a path that does not run, except here the
+path that does not run is the shipped one. Materials become assets, resolved
+once, not searched for per part.
+
+*Adding URP would be adding a package. Per the rule, I am not doing that — I am
+telling you it is missing and waiting.*
+
+**One `Material` per part.** 13 parts × 22 players + 14 stadium pieces + the ball
+≈ **301 unique material instances**, so 301 draw calls with no batching possible,
+because every instance is unique by construction. On an Android-first game that
+is the first thing to show up in a frame capture. A handful of shared materials
+plus a per-renderer property block gives the same look and batches.
+
+None of these three is a reason to throw the file away. They are the difference
+between a skeleton and a build.
+
+---
+
+## 4. Architecture
 
 ```
 CareerDugout.Unity/                     the one project
@@ -292,7 +375,7 @@ the thing being tested has never heard of Unity.
 
 ---
 
-## 4. Determinism
+## 5. Determinism
 
 Three streams, kept apart, ported exactly:
 
@@ -312,7 +395,7 @@ Enforced mechanically. A CI grep fails the build on `UnityEngine`,
 
 ---
 
-## 5. The order, with the gate on each step
+## 6. The order, with the gate on each step
 
 Each phase ends with a number or it has not ended. Numbers marked **(oracle)**
 are produced by running the Kotlin original here and are the target the C# has
@@ -381,24 +464,30 @@ interpolates between steps and never drives them. No list of pre-decided events
 anywhere — that is decision 1, and it applies to the Unity side as much as to
 the file being deleted. Poses from `Ev4.SHOWN`. Commentary drains highest-weight
 first and drops the rest.
-*Blocked on the missing Unity zip.*
+*Starts from the kept two thirds of `MatchBroadcastDirector` (§3.1), with the
+pitch rescaled to 105 × 68 and the materials shared (§3.2), and with
+`PlaySequence` / `RunPhase` gone.* Writable here, not runnable here.
 
 **Phase 6 — the manager screens.** Fourteen of them, specified by
-`MainActivity.kt`.
+`MainActivity.kt`, built on `ManagerDashboard`'s `Panel` / `Label` / `Button`.
 
 **Phase 7 — Android.** IL2CPP, ARM64, an APK.
 
 ---
 
-## 6. What I need from you
+## 7. What I need from you
 
-1. **`careerdugoutunity.zip`.** Phases 0–4 do not need it. Phase 5 cannot start
-   without it.
-2. **`GAME.md`, if it exists.** I planned from `AUDIT.md` and the rest.
-3. **A decision on §1.3** — whether to aim for a bit-identical fingerprint as the
+1. **A decision on §1.3** — whether to aim for a bit-identical fingerprint as the
    translation's acceptance test. I recommend yes, and I will tell you inside a
    day of phase 1 whether `Rng` and `World` reproduce, which settles it early and
    cheaply.
-4. **Eventually, a Unity build machine.** Not yet.
+2. **URP: in or out.** Both `Shader.Find` sites ask for it and the manifest does
+   not have it, so today it silently falls back. Adding
+   `com.unity.render-pipelines.universal` is adding a package, which is yours to
+   approve. Say no and I build against the built-in pipeline, which is fine for
+   flat-shaded low-poly and cheaper on Android.
+3. **`GAME.md`, if it exists.** I planned from `AUDIT.md` and the rest.
+4. **Eventually, a Unity build machine.** Not until phase 5.
 
-Nothing on this list blocks starting.
+None of these blocks starting. Items 1 and 2 are answered before they are needed
+if you answer them at all.
